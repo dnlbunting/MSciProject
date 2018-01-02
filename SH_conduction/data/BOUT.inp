@@ -1,0 +1,38 @@
+nout = 1000       # Number of output timesteps
+timestep = 0.0001  # Time between outputs
+
+MXG = 0 # No X communications
+
+##################################################
+[SHConduction]  # Settings for the conduction model
+
+kappa_0 = 2000
+q_in = -3.5e6
+T_t = 10
+
+##################################################
+[mesh]  # Geometry of the mesh
+
+nx = 1
+ny = 100
+nz = 1
+
+length = 50
+dy = length/ny
+
+# Puts the boundaries half a step outside the last gridpoints
+symmetricGlobalY=true
+
+# These flags make the y-direction non-periodic
+ixseps1 = -1
+ixseps2 = -1
+
+
+##################################################
+[T] # Settings for the T variable
+
+scale = 1.0
+function = SHConduction:T_t
+
+bndry_yup = free_o3 # Apply constant heat BC on upstream
+bndry_ydown = dirichlet_o4(SHConduction:T_t) # Constant T BC on target
