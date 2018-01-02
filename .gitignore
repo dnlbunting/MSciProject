@@ -30,3 +30,16 @@
 *.exe
 *.out
 *.app
+
+# NetCDF datafiles
+*.nc
+
+# BOUT compiled settings
+*BOUT.settings
+*BOUT.log.0
+
+
+# Sublime workspace
+*.sublime-workspace
+
+*.ipynb_checkpoints
