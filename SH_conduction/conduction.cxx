@@ -14,7 +14,7 @@ private:
   Field3D T, q;
   BoutReal kappa_0, q_in, T_t, length;
 
-  Field3D n = 1e-19; // Use constant density everywhere
+  Field3D n = 1e19; // Use constant density everywhere
 
 protected:
 
@@ -53,7 +53,7 @@ protected:
     q.applyBoundary("upper_target", "dirichlet_o4(" + std::to_string(q_in) + ")"); // Fix upstream end to be a constant heat flow
     q.applyBoundary("lower_target", "free_o3"); // Allow heat at target to equilibrate
 
-    ddt(T) = -(2./3.) * (n / SI::qe) * DDY(q); // Evolve T
+    ddt(T) = -(2./3.) * DDY(q) / (n * SI::qe); // Evolve T
 
     return 0;
   }
