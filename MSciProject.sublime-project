@@ -1,0 +1,19 @@
+{
+	"folders":
+	[
+		{
+			"path": "."
+		}
+	],
+
+
+    "build_systems":
+    [
+        {
+            "name": "BOUT++",
+            "working_dir": "$file_path",
+            "shell_cmd": "make; ./$file_base_name"
+        }
+    ]
+
+}
