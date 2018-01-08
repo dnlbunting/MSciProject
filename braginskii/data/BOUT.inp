@@ -1,0 +1,66 @@
+nout = 10000      # Number of output timesteps
+timestep = 0.000001  # Time between outputs
+
+MXG = 0 # No X communications
+MYG = 2
+StaggerGrids = true
+##################################################
+[SHConduction]
+
+kappa_0 = 2000
+q_in = -3.5e6
+T_t = 20
+n_t = 1e19
+
+##################################################
+[mesh]  # Geometry of the mesh
+
+nx = 1
+ny = 100
+nz = 1
+
+length = 50
+dy = length/ny
+ypos = y * length / (2*pi) # Y position [m]
+
+# Puts the boundaries half a step outside the last gridpoints
+symmetricGlobalY=true
+
+# These flags make the y-direction non-periodic
+ixseps1 = -1
+ixseps2 = -1
+
+[mesh:ddy]
+
+first = C4
+second = C4
+upwind = W3
+flux = W3
+
+##################################################
+# Down is target
+# Up is upstream
+
+[T]
+scale = 1.0
+function = SHConduction:T_t
+bndry_ydown = dirichlet_o4(SHConduction:T_t) # Constant T BC on target
+bndry_yup = free_o3 # Apply constant heat BC on upstream
+
+[n]
+scale = 1.0
+function = 1
+bndry_ydown = relax(dirichlet_o4(1.0), 100)
+bndry_yup = relax(dirichlet_o4(1.0), 100)
+
+S_n = exp(-mesh:ypos/5 + 1.66666111e-5)/5  # Weird offset needed to exactly align with grid cells....
+
+[v]
+scale = 1.0
+function = -0.5
+bndry_ydown =  neumann_o2(0.2)
+bndry_yup = neumann_o2(0)
+
+
+##################################################
+
