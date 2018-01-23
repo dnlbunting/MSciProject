@@ -24,7 +24,7 @@ dy = length/ny
 ypos = y * length / (2*pi) # Y position [m]
 
 # Puts the boundaries half a step outside the last gridpoints
-symmetricGlobalY=true
+#symmetricGlobalY=true
 
 # These flags make the y-direction non-periodic
 ixseps1 = -1
@@ -36,6 +36,9 @@ first = C4
 second = C4
 upwind = W3
 flux = W3
+
+[solver]
+mxstep = 5000
 
 ##################################################
 # Down is target
@@ -50,17 +53,15 @@ bndry_yup = free_o3 # Apply constant heat BC on upstream
 [n]
 scale = 1.0
 function = 1
-bndry_ydown = relax(dirichlet_o4(1.0), 100)
-bndry_yup = relax(dirichlet_o4(1.0), 100)
+bndry_ydown = dirichlet_o4(1.0)
+bndry_yup = free_o3() #relax(dirichlet_o4(1.0), 100)
 
 S_n = exp(-mesh:ypos/5 + 1.66666111e-5)/5  # Weird offset needed to exactly align with grid cells....
 
 [v]
 scale = 1.0
-function = -0.5
-bndry_ydown =  neumann_o2(0.2)
-bndry_yup = neumann_o2(0)
-
+function = -exp(-mesh:ypos/5)
+bndry_ydown = neumann_o2(0.2)
+bndry_yup = dirichlet_o4(0)
 
 ##################################################
-
