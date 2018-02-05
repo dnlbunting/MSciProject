@@ -1,0 +1,76 @@
+nout = 15000      # Number of output timesteps
+timestep = 0.000001  # Time between outputs
+
+MXG = 0 # No X communications
+MYG = 2
+StaggerGrids = true
+##################################################
+[SHConduction]
+
+kappa_0 = 2000
+q_in = -3.5e6
+T_t = 20
+n_t = 1e19
+
+##################################################
+[mesh]  # Geometry of the mesh
+
+StaggerGrids = true
+
+
+nx = 1
+ny = 200
+nz = 1
+
+length = 100
+dy = length/ny
+ypos = y * length / (2*pi) # Y position [m]
+
+# Puts the boundaries half a step outside the last gridpoints
+symmetricGlobalY=true
+
+# These flags make the y-direction non-periodic
+ixseps1 = -1
+ixseps2 = -1
+
+[mesh:ddy]
+
+first = C4
+second = C4
+upwind = W3
+flux = W3
+
+[solver]
+mxstep = 5000
+
+##################################################
+# Down is target
+# Up is upstream
+
+[T]
+scale = 1.0
+function = SHConduction:T_t
+bndry_ydown=none
+bndry_yup=none
+
+#Localised source
+S_u = -SHConduction:q_in*exp(-(0.5*mesh:length-mesh:ypos)^2/10)/sqrt(10*pi)
+
+#Distributed Source
+#S_u = -SHConduction:q_in/mesh:length
+
+[n]
+scale = 1.0
+function = 1
+bndry_ydown = dirichlet_o4(1.0)
+bndry_yup = dirichlet_o4(1.0)
+
+S_n = exp(-mesh:ypos/5)/5 + exp(-(mesh:length-mesh:ypos)/5)/5
+
+[v]
+scale = 1.0
+function = -exp(-mesh:ypos/5) + exp(-(mesh:length-mesh:ypos)/5)
+bndry_ydown = dirichlet_o4(-0.9999999979) #neumann_o2(0.2)
+bndry_yup = dirichlet_o4(0.9999999979) #neumann_o2(0.2)
+
+##################################################
