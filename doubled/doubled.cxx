@@ -15,6 +15,11 @@
 
 #include <interpolation.hxx>
 
+
+#include "xtensor/xarray.hpp"
+#include "xtensor/xio.hpp"
+#include "xtensor/xnpy.hpp"
+
 typedef std::function<double(double)>  SplineFunc;
 
 class gsl_function_pp : public gsl_function
@@ -69,7 +74,22 @@ private:
   //Integration workspace
   gsl_integration_workspace * integration_workspace = gsl_integration_workspace_alloc(10000);
 
+  xt::xarray<double> FieldToArray (Field3D F){
+    xt::xarray<double> X = xt::zeros<double>({N});
+    for (int k = mesh->ystart; k < mesh->yend+1; ++k) {
+      X(k-mesh->ystart) =  F(0,k,0);
+    }
+    return X;
+  }
 
+  xt::xarray<double> SplineToArray (SplineFunc F){
+    xt::xarray<double> X = xt::zeros<double>({N});
+    for (int k = mesh->ystart; k < mesh->yend+1; ++k) {
+      double x = mesh->GlobalY(k) * length;
+      X(k-mesh->ystart) =  F(x);
+    }
+    return X;
+  }
 
 protected:
 
@@ -154,13 +174,8 @@ protected:
       y[0] = y[1];
     }
 
-    /*for (int i = 0; i < N+5; ++i)
-    {
-      output << i << ": " <<  x[i] << ", " << y[i] << endl;
-    }*/
-
     gsl_spline_init(spline, x, y, N+5);
-    gsl_interp_accel_reset(nacc);
+    gsl_interp_accel_reset(acc);
 
     SplineFunc  F = [=](double x){return gsl_spline_eval(spline, x, acc);};
     return F;
@@ -182,7 +197,9 @@ protected:
     if (handle){gsl_set_error_handler (NULL);}
 
     if (errno != 0){
-      output << "Integration Error! " << errno << " result = " <<result << " error = " << error << endl;
+      output << "Integration Error! " << errno << "x1 = " << x1 << ", x2 = " << x2 << " result = " <<result << " error = " << error << endl;
+      xt::dump_npy("/Users/Daniel/Documents/Imperial/MSciProject/doubled/kernel.npy", SplineToArray(spline));
+      exit(1);
     }
     return result;
   }
@@ -208,7 +225,7 @@ protected:
     lambda_0 = (2.5e17/n_t) * Tspline(x2) / (nspline(x2) * logLambda);
     lambda = a * sqrt(Z+1)*lambda_0;
 
-    BoutReal n_integral = GSLIntegrate(nspline, x2, x1, true);
+    BoutReal n_integral = TrapziumIntegrate(nspline, x2, x1, 200);
     w = exp(-abs(n_integral)/(lambda*nspline(x2)))/(2*lambda);
 
     return w;
@@ -218,19 +235,30 @@ protected:
     Field3D heat = 0.0;
     heat.setLocation(loc);
 
+    xt::xarray<double> X = xt::zeros<double>({200, 200}) - 1;
+    xt::dump_npy("/Users/Daniel/Documents/Imperial/MSciProject/doubled/qSH.npy", SplineToArray(qSH));
+
     Field3D ypos_m = interp_to(ypos, loc);
     BoutReal xstart = ypos_m(0,mesh->ystart,0);
     BoutReal xend = ypos_m(0,mesh->yend,0);
 
-    for (int j = mesh->ystart-2; j < mesh->yend+3; ++j) {
+    for (int j = mesh->ystart; j < mesh->yend+1; ++j) {
       double x = ypos_m(0,j,0);
       double result, error;
       SplineFunc F = [&](double x1){ return qSH(x1) * kernel(x, x1);};
 
+      for (int k = mesh->ystart; k < mesh->yend+1; ++k) {
+          X(j-mesh->ystart, k-mesh->ystart) =  F(ypos_m(0,k,0));
+      }
+
       //result = GSLIntegrate([&](double x1){ return qSH(x1) * kernel(x, x1);}, xstart, xend, true);
-      result = TrapziumIntegrate(F, xstart, xend, 100);
+      result = TrapziumIntegrate(F, xstart, xend, 200);
       heat(0,j,0) = result;
     }
+
+    xt::dump_npy("/Users/Daniel/Documents/Imperial/MSciProject/doubled/X.npy", X);
+    xt::dump_npy("/Users/Daniel/Documents/Imperial/MSciProject/doubled/q.npy", FieldToArray(heat));
+    exit(0);
     return heat;
   }
 
@@ -256,9 +284,13 @@ protected:
     p.mergeYupYdown();
     p_dyn = m_i * (n_t*n) * (c_st*v) * (c_st*v);
 
-    q = qSH;
 
-    //q = heat_convolution(qSHspline, CELL_YLOW); // Convolution
+    if (t > 0.005){
+        q = heat_convolution(qSHspline, CELL_YLOW); // Convolution
+    }
+    else
+      {q = qSH;}
+
 
     ddt(n) = c_st * (S_n - FDDY(v, n, CELL_CENTRE));
     ddt(v) = -c_st * VDDY(v, v, CELL_YLOW) - DDY(p, CELL_YLOW)/(m_i*interp_to(n,CELL_YLOW)*n_t*c_st);
