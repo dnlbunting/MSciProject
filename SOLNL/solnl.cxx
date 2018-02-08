@@ -10,6 +10,55 @@
 #include <field_factory.hxx>
 #include <interpolation.hxx>
 
+#include <future>
+#include <vector>
+
+BoutReal TrapeziumIntegrate(Field3D f, int i1, int i2, BoutReal dx){
+  BoutReal result = 0.5*(f(0,i1,0) + f(0,i2,0));
+
+  if (i1 == i2){
+    return 0.0;
+  }
+
+  else if (i1 > i2){
+    for (int i = i2+1; i < i1; ++i){
+      result += f(0,i,0);
+  }
+  result *= -dx;
+  }
+
+  else {
+    for (int i = i1+1; i < i2; ++i){
+      result += f(0,i,0);
+  }
+  result *= dx;
+  }
+
+  return result;
+}
+
+BoutReal TrapeziumIntegrate(std::vector<BoutReal> f, int i1, int i2, BoutReal dx){
+  BoutReal result = 0.;
+
+  if (i1 > i2){
+    result = 0.5*(f[i1] + f[i2]);
+    for (int i = i2+1; i < i1; ++i){
+      result += f[i];
+    }
+    result *= -dx;
+  }
+
+  else if (i2 > i1) {
+    result = 0.5*(f[i1] + f[i2]);
+    for (int i = i1+1; i < i2; ++i){
+      result += f[i];
+    }
+    result *= dx;
+  }
+
+  return result;
+}
+
 class SOLNL : public PhysicsModel {
 private:
 
@@ -73,31 +122,6 @@ protected:
     return 0;
   }
 
-  BoutReal TrapeziumIntegrate(Field3D f, int i1, int i2){
-    BoutReal result = 0.5*(f(0,i1,0) + f(0,i2,0));
-    BoutReal dx = length/N;
-
-    if (i1 == i2){
-      return 0.0;
-    }
-
-    else if (i1 > i2){
-      for (int i = i2+1; i < i1; ++i){
-        result += f(0,i,0);
-    }
-    result *= -dx;
-    }
-
-    else {
-      for (int i = i1+1; i < i2; ++i){
-        result += f(0,i,0);
-    }
-    result *= dx;
-    }
-
-    return result;
-  }
-
   BoutReal kernel(int i1, int i2){
 
     BoutReal Z = 1;
@@ -108,7 +132,7 @@ protected:
     lambda_0 = (2.5e17/n_t) * T(0,i2,0) / (n(0,i2,0) * logLambda);
     lambda = a * sqrt(Z+1)*lambda_0;
 
-    BoutReal n_integral = TrapeziumIntegrate(n, i2, i1);
+    BoutReal n_integral = TrapeziumIntegrate(n, i2, i1, length/N);
     w = exp(-abs(n_integral)/(lambda*n(0,i2,0)))/(2*lambda);
 
     return w;
@@ -119,13 +143,18 @@ protected:
       Calculate the convolution at each grid point
     */
     Field3D heat = 0.0;
+    std::vector<std::future<BoutReal>> futures(mesh->yend+1);
 
     for (int j = mesh->ystart; j < mesh->yend+1; ++j) {
-      Field3D F = 0.0;
+
+      std::vector<BoutReal> F(mesh->yend+1);
       for (int k = mesh->ystart; k < mesh->yend+1; ++k) {
-          F(0,k,0) = qSH(0,j,0) * kernel(j, k);
+          F[k] = qSH(0,j,0) * kernel(j, k);
       }
-      heat(0,j,0) = TrapeziumIntegrate(F, mesh->ystart, mesh->yend);
+      futures[j] = std::async( [=]{return TrapeziumIntegrate(F, mesh->ystart, mesh->yend, length/N);} );
+    }
+    for (int j = mesh->ystart; j < mesh->yend+1; ++j) {
+      heat(0,j,0) = futures[j].get();
     }
 
     // These extrapolated boundaries are technically invalid,
