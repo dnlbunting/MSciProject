@@ -122,37 +122,60 @@ protected:
     return 0;
   }
 
-  BoutReal kernel(int i1, int i2){
-
-    BoutReal Z = 1;
-    BoutReal a = 32;
-    BoutReal w, lambda_0, lambda, logLambda;
-
-    logLambda = 15.2 - 0.5*log(n(0,i2,0) * (n_t/1e20)) + log(T(0,i2,0)/1000);
-    lambda_0 = (2.5e17/n_t) * T(0,i2,0) / (n(0,i2,0) * logLambda);
-    lambda = a * sqrt(Z+1)*lambda_0;
-
-    BoutReal n_integral = TrapeziumIntegrate(n, i2, i1, length/N);
-    w = exp(-abs(n_integral)/(lambda*n(0,i2,0)))/(2*lambda);
-
-    return w;
+  /* Weird stuff happens in the Field3D constructor
+     that breaks the threaded integrals so just pull
+     the 1D data we need into a vector */
+  std::vector<BoutReal> field_to_vector(Field3D F) const{
+    std::vector<BoutReal> arr(mesh->LocalNy);
+    for (int j = 0; j < mesh->LocalNy; ++j) {arr[j] = F(0,j,0);}
+    return arr;
   }
 
-  Field3D heat_convolution(Field3D qSH, CELL_LOC loc){
+
+  /* Avoid having shared copies of the PhysicsModel
+     between threads by pulling the important stuff
+     into a closure */
+  std::function<double(int,int)>  make_kernel() const{
+    BoutReal Z = 1;
+    BoutReal a = 32;
+
+    std::vector<BoutReal> n_arr = field_to_vector(n);
+    std::vector<BoutReal> T_arr = field_to_vector(T);
+
+    return [=](int i1, int i2){
+    BoutReal lambda_0, lambda, logLambda;
+    logLambda = 15.2 - 0.5*log(n_arr[i2] * (n_t/1e20)) + log(T_arr[i2]/1000);
+    lambda_0 = (2.5e17/n_t) * T_arr[i2] / (n_arr[i2] * logLambda);
+    lambda = a * sqrt(Z+1)*lambda_0;
+    return exp(-abs(TrapeziumIntegrate(n_arr, i2, i1, length/N))/(lambda*n_arr[i2]))/(2*lambda);};
+  }
+
+  Field3D heat_convolution(Field3D qSH, CELL_LOC loc) const{
     /*
       Calculate the convolution at each grid point
     */
-    Field3D heat = 0.0;
-    std::vector<std::future<BoutReal>> futures(mesh->yend+1);
 
-    for (int j = mesh->ystart; j < mesh->yend+1; ++j) {
+    // Lots of closure magic to make this thread safe
+    std::function<double(int,int)> kernel = make_kernel();
+    std::vector<BoutReal> q_arr = field_to_vector(qSH);
 
+    auto parallel_core = [=](int j) {
       std::vector<BoutReal> F(mesh->yend+1);
       for (int k = mesh->ystart; k < mesh->yend+1; ++k) {
-          F[k] = qSH(0,j,0) * kernel(j, k);
+          F[k] = q_arr[j] * kernel(j, k);
       }
-      futures[j] = std::async( [=]{return TrapeziumIntegrate(F, mesh->ystart, mesh->yend, length/N);} );
+      return TrapeziumIntegrate(F, mesh->ystart, mesh->yend, length/N);
+    };
+
+
+    // Launch the futures
+    Field3D heat = 0.0;
+    std::vector<std::future<BoutReal>> futures(mesh->yend+1);
+    for (int j = mesh->ystart; j < mesh->yend+1; ++j) {
+      futures[j] = std::async(std::launch::async, std::bind(parallel_core, j));
     }
+
+    // Collect the futures
     for (int j = mesh->ystart; j < mesh->yend+1; ++j) {
       heat(0,j,0) = futures[j].get();
     }
