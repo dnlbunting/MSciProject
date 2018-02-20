@@ -66,7 +66,9 @@ private:
   Field3D T, n, v;
 
   // Derived quantities
-  Field3D p, q, p_dyn, qSH;
+  Field3D p, q, p_dyn, qSH, v_centre;
+
+  Field3D A,B,C;
 
   // Source terms
   Field3D S_n, S_u, ypos;
@@ -77,8 +79,11 @@ private:
   //Normalisations
   BoutReal n_t, c_st;
 
-    // Convolution kernel
+  // Convolution kernel
   Field3D w = 0.0;
+
+  // Time derivatives
+  Field3D ddt_T, ddt_n, ddt_v;
 
   // Number of non boundary grid points
   int N = mesh->yend-mesh->ystart+1;
@@ -115,6 +120,9 @@ protected:
 
     SOLVE_FOR3(T, n, v);
     SAVE_REPEAT4(q, qSH, p, p_dyn);
+    SAVE_REPEAT3(ddt_n, ddt_T, ddt_v)
+    SAVE_REPEAT4(A, B, C, v_centre)
+
     SAVE_ONCE4(kappa_0, q_in, T_t, length);
     SAVE_ONCE4(S_n, n_t, c_st, S_u);
     SAVE_ONCE(ypos);
@@ -194,11 +202,13 @@ protected:
   int rhs(BoutReal t) override {
     mesh->communicate(n,v,T);
 
+
     // Create constant T heat bath BCs for T
-    T.applyBoundary("upper_target", "dirichlet(" + std::to_string(T_t) + ")");
-    T.applyBoundary("upper_target", "dirichlet(" + std::to_string(T_t) + ")");
+    //.applyBoundary("upper_target", "dirichlet(" + std::to_string(T_t) + ")");
+    //T.applyBoundary("upper_target", "dirichlet(" + std::to_string(T_t) + ")");
+
     T(0,0,0) = T_t; T(0,1,0) = T_t;  T(0,2,0) = T_t;
-    T(0,202,0) = T_t; T(0,203,0) = T_t;  T(0,201,0) = T_t;
+    T(0,N+1,0) = T_t; T(0,N+2,0) = T_t; T(0,N+3,0) = T_t;
 
     qSH = -kappa_0 * DDY(T, CELL_YLOW) * pow(T, 2.5);
     // These extrapolated boundaries are technically invalid,
@@ -208,16 +218,41 @@ protected:
 
     // Fluid pressure
     p = 2*(n_t*n)*SI::qe*T;
-    p.mergeYupYdown();
     p_dyn = m_i * (n_t*n) * (c_st*v) * (c_st*v);
 
-    q = heat_convolution(qSH, CELL_YLOW);
+    q = qSH; //heat_convolution(qSH, CELL_YLOW);
 
     // Fluid equations
     ddt(n) = c_st * (S_n - FDDY(v, n, CELL_CENTRE));
-    ddt(v) = -c_st * VDDY(v, v, CELL_YLOW) - DDY(p, CELL_YLOW)/(m_i*interp_to(n,CELL_YLOW)*n_t*c_st);
+
+     ddt(v) = interp_to((-DDY(p, CELL_YLOW))/(m_i*n*n_t*c_st) - c_st*(2 * VDDY(v, v, CELL_YLOW)  +  v*(VDDY(v, n)/n)), CELL_YLOW);
+
     n.applyTDerivBoundary();
-    ddt(T) = (1 / (3 * n_t*n * SI::qe)) * (S_u - DDY(q, CELL_CENTRE) + VDDY(v,p, CELL_CENTRE)) + (T/n) * ddt(n);
+    ddt(T) = 0;//8(1 / (3 * n_t*n * SI::qe)) * (S_u - DDY(q, CELL_CENTRE) ); //+ VDDY(v,p, CELL_CENTRE)) + (T/n) * ddt(n);
+
+    A = -DDY(p, CELL_YLOW)/(m_i*n*n_t*c_st);
+    A.applyBoundary("upper_target", "free_o3");
+    A.applyBoundary("lower_target", "free_o3");
+    A = interp_to(A, CELL_CENTRE) ;
+
+    B = -2*c_st*VDDY(v, v, CELL_YLOW);
+    B.applyBoundary("upper_target", "free_o3");
+    B.applyBoundary("lower_target", "free_o3");
+    B = interp_to(B, CELL_CENTRE) ;
+
+    C = -c_st*v*(VDDY(v, n)/n);
+    C.applyBoundary("upper_target", "free_o3");
+    C.applyBoundary("lower_target", "free_o3");
+    C = interp_to(C, CELL_CENTRE) ;
+
+    v_centre = v;
+    v_centre.applyBoundary("upper_target", "free_o3");
+    v_centre.applyBoundary("lower_target", "free_o3");
+    v_centre = interp_to(v, CELL_CENTRE);
+
+    ddt_T = FDDY(v, n, CELL_CENTRE);
+    ddt_n = ddt(n);
+    ddt_v = ddt(v);
 
     return 0;
   }
