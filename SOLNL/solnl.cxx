@@ -202,55 +202,36 @@ protected:
   int rhs(BoutReal t) override {
     mesh->communicate(n,v,T);
 
-
     // Create constant T heat bath BCs for T
-    //.applyBoundary("upper_target", "dirichlet(" + std::to_string(T_t) + ")");
-    //T.applyBoundary("upper_target", "dirichlet(" + std::to_string(T_t) + ")");
+    T(0,0,0) = T_t; T(0,1,0) = T_t;
+    T(0,N+2,0) = T_t; T(0,N+3,0) = T_t;
 
-    T(0,0,0) = T_t; T(0,1,0) = T_t;  T(0,2,0) = T_t;
-    T(0,N+1,0) = T_t; T(0,N+2,0) = T_t; T(0,N+3,0) = T_t;
+    // Need to calculate the value of q one cell into the right boundary
+    // because this cell is ON the boundary now as a result of being staggered
+    // so we can use the T BC to get a well defined value here
+    // this is then used later to calculate (DDY(q))_{N-1}
+    qSH = DDY(T, CELL_YLOW);
+    qSH(0,N+2,0) = (T(0,N+2,0)-T(0,N+1,0))/mesh->coordinates()->dy(0,0,0);
+    qSH *= -kappa_0 * interp_to(pow(T, 2.5), CELL_YLOW);
 
-    qSH = -kappa_0 * DDY(T, CELL_YLOW) * pow(T, 2.5);
-    // These extrapolated boundaries are technically invalid,
-    // but necessary to use interp_to to shift ylow <-> ycenter
-    qSH.applyBoundary("upper_target", "free_o3");
-    qSH.applyBoundary("lower_target", "free_o3");
+    // For tidiness, doesn't actually affect anything
+    qSH(0,0,0) = 0; qSH(0,1,0) = 0;  qSH(0,N+3,0) = 0;
+
+    q = qSH;
 
     // Fluid pressure
     p = 2*(n_t*n)*SI::qe*T;
     p_dyn = m_i * (n_t*n) * (c_st*v) * (c_st*v);
 
-    q = qSH; //heat_convolution(qSH, CELL_YLOW);
-
     // Fluid equations
-    ddt(n) = c_st * (S_n - FDDY(v, n, CELL_CENTRE));
-
-     ddt(v) = interp_to((-DDY(p, CELL_YLOW))/(m_i*n*n_t*c_st) - c_st*(2 * VDDY(v, v, CELL_YLOW)  +  v*(VDDY(v, n)/n)), CELL_YLOW);
-
+    ddt(n) =  0; //c_st * (S_n - FDDY(v, n, CELL_CENTRE));
+    ddt(v) = 0;//interp_to((-DDY(p, CELL_YLOW))/(m_i*n*n_t*c_st) - c_st*(2 * VDDY(v, v, CELL_YLOW)  +  v*(VDDY(v, n, CELL_YLOW)/n)), CELL_YLOW);
     n.applyTDerivBoundary();
-    ddt(T) = 0;//8(1 / (3 * n_t*n * SI::qe)) * (S_u - DDY(q, CELL_CENTRE) ); //+ VDDY(v,p, CELL_CENTRE)) + (T/n) * ddt(n);
+    ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( S_u - DDY(q, CELL_CENTRE) ); //+ VDDY(v,p, CELL_CENTRE)) + (T/n) * ddt(n);
 
-    A = -DDY(p, CELL_YLOW)/(m_i*n*n_t*c_st);
-    A.applyBoundary("upper_target", "free_o3");
-    A.applyBoundary("lower_target", "free_o3");
-    A = interp_to(A, CELL_CENTRE) ;
+    A=0;B=0;C=0;v_centre=0;
 
-    B = -2*c_st*VDDY(v, v, CELL_YLOW);
-    B.applyBoundary("upper_target", "free_o3");
-    B.applyBoundary("lower_target", "free_o3");
-    B = interp_to(B, CELL_CENTRE) ;
-
-    C = -c_st*v*(VDDY(v, n)/n);
-    C.applyBoundary("upper_target", "free_o3");
-    C.applyBoundary("lower_target", "free_o3");
-    C = interp_to(C, CELL_CENTRE) ;
-
-    v_centre = v;
-    v_centre.applyBoundary("upper_target", "free_o3");
-    v_centre.applyBoundary("lower_target", "free_o3");
-    v_centre = interp_to(v, CELL_CENTRE);
-
-    ddt_T = FDDY(v, n, CELL_CENTRE);
+    ddt_T = ddt(T);
     ddt_n = ddt(n);
     ddt_v = ddt(v);
 

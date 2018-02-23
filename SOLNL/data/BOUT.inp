@@ -1,4 +1,4 @@
-nout = 1500      # Number of output timesteps
+nout = 1500   # Number of output timesteps
 timestep = 0.00001  # Time between outputs
 
 MXG = 0 # No X communications
@@ -15,7 +15,7 @@ L_iz = 5
 ##################################################
 [mesh]  # Geometry of the mesh
 
-StaggerGrids = false
+StaggerGrids = true
 
 
 nx = 1
@@ -35,7 +35,7 @@ ixseps2 = -1
 
 [mesh:ddy]
 
-first = C4
+first = C2
 second = C4
 upwind = U4
 flux = SPLIT
@@ -50,8 +50,8 @@ mxstep = 5000
 [T]
 scale = 1.0
 function = SHConduction:T_t
-bndry_ydown=none #dirichlet_o2(SHConduction:T_t)
-bndry_yup=none #dirichlet_o2(SHConduction:T_t)
+bndry_ydown=none
+bndry_yup=none
 
 #Localised source
 S_u = -SHConduction:q_in*exp(-(0.5*mesh:length-mesh:ypos)^2/100)/sqrt(100*pi)
@@ -65,10 +65,7 @@ function = 1
 bndry_ydown = dirichlet_o4(1.0)
 bndry_yup = dirichlet_o4(1.0)
 
-y_offset  = mesh:ypos - mesh:dy
 S_n = (H(0.5*mesh:length - mesh:ypos)*exp(-(mesh:ypos)/SHConduction:L_iz)+ H(mesh:ypos - 0.5*mesh:length)*exp(-(mesh:length-mesh:ypos)/SHConduction:L_iz))/SHConduction:L_iz
-
-#exp(-(mesh:ypos-mesh:dy)/SHConduction:L_iz)/SHConduction:L_iz + exp(-(mesh:length-mesh:ypos-mesh:dy)/SHConduction:L_iz)/SHConduction:L_iz
 
 [v]
 scale = 1.0
