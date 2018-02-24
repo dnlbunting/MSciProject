@@ -210,7 +210,7 @@ protected:
     // because this cell is ON the boundary now as a result of being staggered
     // so we can use the T BC to get a well defined value here
     // this is then used later to calculate (DDY(q))_{N-1}
-    qSH = DDY(T, CELL_YLOW);
+    qSH = DDY(T, CELL_YLOW, DIFF_C2);
     qSH(0,N+2,0) = (T(0,N+2,0)-T(0,N+1,0))/mesh->coordinates()->dy(0,0,0);
     qSH *= -kappa_0 * interp_to(pow(T, 2.5), CELL_YLOW);
 
@@ -224,12 +224,13 @@ protected:
     p_dyn = m_i * (n_t*n) * (c_st*v) * (c_st*v);
 
     // Fluid equations
-    ddt(n) =  0; //c_st * (S_n - FDDY(v, n, CELL_CENTRE));
-    ddt(v) = 0;//interp_to((-DDY(p, CELL_YLOW))/(m_i*n*n_t*c_st) - c_st*(2 * VDDY(v, v, CELL_YLOW)  +  v*(VDDY(v, n, CELL_YLOW)/n)), CELL_YLOW);
+    ddt(n) =  c_st * (S_n - FDDY(v, n, CELL_CENTRE));
+    ddt(v) = (-DDY(p, CELL_YLOW))/(m_i*n*n_t*c_st) - c_st*(2 * VDDY(v, v, CELL_YLOW)  +  v*(VDDY(v, n, CELL_YLOW)/n));
     n.applyTDerivBoundary();
-    ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( S_u - DDY(q, CELL_CENTRE) ); //+ VDDY(v,p, CELL_CENTRE)) + (T/n) * ddt(n);
+    ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( S_u - DDY(q, CELL_CENTRE, DIFF_C2) ); //+ VDDY(v,p, CELL_CENTRE)) + (T/n) * ddt(n);
 
-    A=0;B=0;C=0;v_centre=0;
+    A=VDDY(v, n, CELL_CENTRE);
+    B=0;C=0;v_centre=0;
 
     ddt_T = ddt(T);
     ddt_n = ddt(n);
