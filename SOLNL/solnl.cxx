@@ -202,9 +202,10 @@ protected:
   int rhs(BoutReal t) override {
     mesh->communicate(n,v,T);
 
-    // Create constant T heat bath BCs for T
-    T(0,0,0) = T_t; T(0,1,0) = T_t;
-    T(0,N+2,0) = T_t; T(0,N+3,0) = T_t;
+    // This cell doesn't get used, as we take only C2 derivatives
+    // But the extrapolation can sometimes make it negative
+    // which causes a problem with the T^2.5 term.
+    T(0,0,0) = T_t; T(0,N+3,0) = T_t;
 
     // Need to calculate the value of q one cell into the right boundary
     // because this cell is ON the boundary now as a result of being staggered
@@ -229,8 +230,8 @@ protected:
     n.applyTDerivBoundary();
     ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( S_u - DDY(q, CELL_CENTRE, DIFF_C2) ); //+ VDDY(v,p, CELL_CENTRE)) + (T/n) * ddt(n);
 
-    A=VDDY(v, n, CELL_CENTRE);
-    B=0;C=0;v_centre=0;
+    A=0;B=0;C=0;
+    v_centre=interp_to(v, CELL_CENTRE);
 
     ddt_T = ddt(T);
     ddt_n = ddt(n);
