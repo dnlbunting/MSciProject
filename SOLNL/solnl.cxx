@@ -66,15 +66,14 @@ private:
   Field3D T, n, v;
 
   // Derived quantities
-  Field3D p, q, p_dyn, qSH, v_centre;
-
-  Field3D A,B,C;
+  Field3D p, q, p_dyn, qSH, qFS, v_centre;
 
   // Source terms
   Field3D S_n, S_u, ypos;
 
   BoutReal kappa_0, q_in, T_t, length;
   BoutReal m_i = SI::Mp;
+  BoutReal m_e = SI::Me;
 
   //Normalisations
   BoutReal n_t, c_st;
@@ -103,10 +102,13 @@ protected:
     c_st = sqrt(2*SI::qe*T_t/m_i);
 
     OPTION(Options::getRoot()->getSection("mesh"), length, 1.0);
+	// Target heat condition
+	q_in = -5.5 * T_t * n_t * c_st * SI::qe;
+	S_u = -2*q_in/length;
 
     FieldFactory f(mesh);
     S_n = f.create3D("n:S_n");
-    S_u = f.create3D("T:S_u");
+	//S_u = f.create3D("T:S_u");
 
     v.setLocation(CELL_YLOW); // Stagger
     qSH.setLocation(CELL_YLOW); // Stagger
@@ -119,9 +121,9 @@ protected:
 
 
     SOLVE_FOR3(T, n, v);
-    SAVE_REPEAT4(q, qSH, p, p_dyn);
+    SAVE_REPEAT5(q, qSH, qFS, p, p_dyn);
     SAVE_REPEAT3(ddt_n, ddt_T, ddt_v)
-    SAVE_REPEAT4(A, B, C, v_centre)
+    SAVE_REPEAT(v_centre);
 
     SAVE_ONCE4(kappa_0, q_in, T_t, length);
     SAVE_ONCE4(S_n, n_t, c_st, S_u);
@@ -218,7 +220,13 @@ protected:
     // For tidiness, doesn't actually affect anything
     qSH(0,0,0) = 0; qSH(0,1,0) = 0;  qSH(0,N+3,0) = 0;
 
-    q = qSH;
+	// Free streaming heat flow
+	qFS = 0.03 * n * T * SI::qe * (T/m_e);
+
+
+	q = ((qSH * qFS) / (qSH + qFS)); // limited heatflow
+    //q = qSH;
+
 
     // Fluid pressure
     p = 2*(n_t*n)*SI::qe*T;
@@ -230,7 +238,6 @@ protected:
     n.applyTDerivBoundary();
     ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( S_u - DDY(q, CELL_CENTRE, DIFF_C2) ); //+ VDDY(v,p, CELL_CENTRE)) + (T/n) * ddt(n);
 
-    A=0;B=0;C=0;
     v_centre=interp_to(v, CELL_CENTRE);
 
     ddt_T = ddt(T);
