@@ -66,13 +66,10 @@ private:
   Field3D T, n, v;
 
   // Derived quantities
-<<<<<<< HEAD
+
   Field3D p, q, p_dyn, qSH, qFS, v_centre;
-=======
-  Field3D p, q, p_dyn, qSH, v_centre;
 
   Field3D A,B,C, gamma;
->>>>>>> f1cb6a196154f0fe27b7bb4c1119d7ba9563610d
 
   // Source terms
   Field3D S_n, S_u, ypos;
