@@ -66,7 +66,13 @@ private:
   Field3D T, n, v;
 
   // Derived quantities
+<<<<<<< HEAD
   Field3D p, q, p_dyn, qSH, qFS, v_centre;
+=======
+  Field3D p, q, p_dyn, qSH, v_centre;
+
+  Field3D A,B,C, gamma;
+>>>>>>> f1cb6a196154f0fe27b7bb4c1119d7ba9563610d
 
   // Source terms
   Field3D S_n, S_u, ypos;
@@ -203,6 +209,12 @@ protected:
 
   int rhs(BoutReal t) override {
     mesh->communicate(n,v,T);
+
+    n(0,0,0) = (3*n(0,1,0) - n(0,2,0))/2.;
+    n(0,N+3,0) = (3*n(0,N+2,0) - n(0,N+1,0))/2.;
+
+    v(0,0,0) = (3*v(0,1,0) - v(0,2,0)) / 2.;
+    v(0,N+3,0) = (3*v(0,N+2,0) - v(0,N+1,0)) / 2.;
 
     // This cell doesn't get used, as we take only C2 derivatives
     // But the extrapolation can sometimes make it negative
