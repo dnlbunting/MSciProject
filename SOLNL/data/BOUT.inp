@@ -1,4 +1,4 @@
-nout = 1500   # Number of output timesteps
+nout = 3000   # Number of output timesteps
 timestep = 0.00001  # Time between outputs
 
 MXG = 0 # No X communications
@@ -33,10 +33,14 @@ symmetricGlobalY=true
 ixseps1 = -1
 ixseps2 = -1
 
+gamma = -H(0.5*mesh:length - mesh:ypos)*exp(-mesh:ypos/SHConduction:L_iz) + H(mesh:ypos - 0.5*mesh:length)*exp(-(mesh:length-mesh:ypos)/SHConduction:L_iz)
+v_f = gamma/n:function
+n_f = 1 + sqrt(1 - (gamma)^2)
+
 [mesh:ddy]
 
-first = C4
-second = C4
+first = C2
+second = C2
 upwind = U4
 flux = SPLIT
 
@@ -60,17 +64,17 @@ S_u = -SHConduction:q_in*exp(-(0.5*mesh:length-mesh:ypos)^2/100)/sqrt(100*pi)
 S_u = -2*SHConduction:q_in/mesh:length
 
 [n]
-scale = 1.0
-function = 1.8
-bndry_ydown = dirichlet_o4(1.0)
-bndry_yup = dirichlet_o4(1.0)
+scale = 1
+function = mesh:n_f
+bndry_ydown = dirichlet_o2(0.96)
+bndry_yup = dirichlet_o2(0.96)
 
 S_n = (H(0.5*mesh:length - mesh:ypos)*exp(-(mesh:ypos)/SHConduction:L_iz)+ H(mesh:ypos - 0.5*mesh:length)*exp(-(mesh:length-mesh:ypos)/SHConduction:L_iz))/SHConduction:L_iz
 
 [v]
 scale = 1.0
-function = -H(0.5*mesh:length - mesh:ypos)*exp(-mesh:ypos/SHConduction:L_iz) + H(mesh:ypos - 0.5*mesh:length)*exp(-(mesh:length-mesh:ypos)/SHConduction:L_iz)
-bndry_ydown = dirichlet_o4(-1)
-bndry_yup =   dirichlet_o4(1)
+function = mesh:v_f
+bndry_ydown = dirichlet_o2(-1.0)
+bndry_yup = dirichlet_o2(1.0)
 
 ##################################################

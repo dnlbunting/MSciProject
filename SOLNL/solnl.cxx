@@ -68,7 +68,7 @@ private:
   // Derived quantities
   Field3D p, q, p_dyn, qSH, v_centre;
 
-  Field3D A,B,C;
+  Field3D A,B,C, gamma;
 
   // Source terms
   Field3D S_n, S_u, ypos;
@@ -83,7 +83,7 @@ private:
   Field3D w = 0.0;
 
   // Time derivatives
-  Field3D ddt_T, ddt_n, ddt_v;
+  Field3D ddt_T, ddt_n, ddt_v, v_f;
 
   // Number of non boundary grid points
   int N = mesh->yend-mesh->ystart+1;
@@ -201,6 +201,12 @@ protected:
 
   int rhs(BoutReal t) override {
     mesh->communicate(n,v,T);
+
+    n(0,0,0) = (3*n(0,1,0) - n(0,2,0))/2.;
+    n(0,N+3,0) = (3*n(0,N+2,0) - n(0,N+1,0))/2.;
+
+    v(0,0,0) = (3*v(0,1,0) - v(0,2,0)) / 2.;
+    v(0,N+3,0) = (3*v(0,N+2,0) - v(0,N+1,0)) / 2.;
 
     // This cell doesn't get used, as we take only C2 derivatives
     // But the extrapolation can sometimes make it negative
