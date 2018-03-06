@@ -114,9 +114,9 @@ protected:
 
     OPTION(Options::getRoot()->getSection("mesh"), length, 1.0);
 
-	// Target heat condition
-	q_in = -5.5 * T_t * n_t * c_st * SI::qe;
-	S_u = -2*q_in/length;
+	  // Target heat condition
+	  q_in = -5.5 * T_t * n_t * c_st * SI::qe;
+	  S_u = -2*q_in/length;
 
     FieldFactory f(mesh);
     S_n = f.create3D("n:S_n");
@@ -238,10 +238,10 @@ protected:
     // For tidiness, doesn't actually affect anything
     qSH(0,0,0) = 0; qSH(0,1,0) = 0;  qSH(0,N+3,0) = 0;
 
-	// Plasma parameter functions
-	logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
-	lambda_0 = (2.5e17/n_t) * T / (n * logLambda);
-	lambda = 32 * sqrt(2)*lambda_0;
+	  // Plasma parameter functions
+	  logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
+	  lambda_0 = (2.5e17/n_t) * T / (n * logLambda);
+	  lambda = 32 * sqrt(2)*lambda_0;
 
     // Free streaming heat flow
     qFS = 0.03 * n * T * SI::qe * (T/m_e);
