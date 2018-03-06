@@ -143,12 +143,12 @@ protected:
   /* Avoid having shared copies of the PhysicsModel
      between threads by pulling the important stuff
      into a closure */
-  std::function<double(int,int)>  make_kernel() const{
+  std::function<double(int,int)>  make_kernel(CELL_LOC loc) const{
     BoutReal Z = 1;
     BoutReal a = 32;
 
-    std::vector<BoutReal> n_arr = field_to_vector(n);
-    std::vector<BoutReal> T_arr = field_to_vector(T);
+    std::vector<BoutReal> n_arr = field_to_vector(interp_to(n, loc));
+    std::vector<BoutReal> T_arr = field_to_vector(interp_to(T, loc));
 
     return [=](int i1, int i2){
     BoutReal lambda_0, lambda, logLambda;
@@ -164,36 +164,39 @@ protected:
     */
 
     // Lots of closure magic to make this thread safe
-    std::function<double(int,int)> kernel = make_kernel();
+    std::function<double(int,int)> kernel = make_kernel(qSH.getLocation());
     std::vector<BoutReal> q_arr = field_to_vector(qSH);
 
-    auto parallel_core = [=](int j) {
-      std::vector<BoutReal> F(mesh->yend+1);
-      for (int k = mesh->ystart; k < mesh->yend+1; ++k) {
-          F[k] = q_arr[j] * kernel(j, k);
+    auto parallel_core = [&](int j) {
+      std::vector<BoutReal> F(N+1, 0);
+      for (int k = mesh->ystart; k < mesh->yend+2; ++k) {
+          F[k-mesh->ystart] = q_arr[k] * kernel(j, k);
+          X(j-mesh->ystart, k-mesh->ystart) = kernel(j, k);
       }
-      return TrapeziumIntegrate(F, mesh->ystart, mesh->yend, length/N);
+      return TrapeziumIntegrate(F, 0, N, length/N);
     };
 
 
     // Launch the futures
     Field3D heat = 0.0;
-    std::vector<std::future<BoutReal>> futures(mesh->yend+1);
-    for (int j = mesh->ystart; j < mesh->yend+1; ++j) {
-      futures[j] = std::async(std::launch::async, std::bind(parallel_core, j));
+    heat.setLocation(CELL_YLOW);
+
+    std::vector<std::future<BoutReal>> futures(N+1);
+    for (int j = mesh->ystart; j < mesh->yend+2; ++j) {
+      futures[j- mesh->ystart] = std::async(std::launch::deferred, std::bind(parallel_core, j));
     }
 
     // Collect the futures
-    for (int j = mesh->ystart; j < mesh->yend+1; ++j) {
-      heat(0,j,0) = futures[j].get();
+    for (int j = mesh->ystart; j < mesh->yend+2; ++j) {
+      heat(0,j,0) = futures[j-mesh->ystart].get();
     }
 
     // These extrapolated boundaries are technically invalid,
     // but necessary to use interp_to to shift ylow <-> ycenter
     // maybe the sheath BC needs to be applied here????
-    heat.applyBoundary("upper_target", "free_o3");
-    heat.applyBoundary("lower_target", "free_o3");
-    heat.mergeYupYdown();
+    //heat.applyBoundary("upper_target", "free_o3");
+    //heat.applyBoundary("lower_target", "free_o3");
+    //heat.mergeYupYdown();
 
     return interp_to(heat, loc);
   }
@@ -219,12 +222,12 @@ protected:
     // this is then used later to calculate (DDY(q))_{N-1}
     qSH = DDY(T, CELL_YLOW, DIFF_C2);
     qSH(0,N+2,0) = (T(0,N+2,0)-T(0,N+1,0))/mesh->coordinates()->dy(0,0,0);
-    qSH *= -kappa_0 * interp_to(pow(T, 2.5), CELL_YLOW);
+    qSH *= -kappa_0 * pow(interp_to(T, CELL_YLOW), 2.5);
 
     // For tidiness, doesn't actually affect anything
     qSH(0,0,0) = 0; qSH(0,1,0) = 0;  qSH(0,N+3,0) = 0;
 
-    q = qSH;
+    q = heat_convolution(qSH, CELL_YLOW);
 
     // Fluid pressure
     p = 2*(n_t*n)*SI::qe*T;
