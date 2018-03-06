@@ -66,15 +66,20 @@ private:
   Field3D T, n, v;
 
   // Derived quantities
-  Field3D p, q, p_dyn, qSH, v_centre;
+  Field3D p, q, p_dyn, qSH, qFS, v_centre;
 
   Field3D A,B,C, gamma;
 
   // Source terms
   Field3D S_n, S_u, ypos;
 
+  // Constants
   BoutReal kappa_0, q_in, T_t, length;
   BoutReal m_i = SI::Mp;
+  BoutReal m_e = SI::Me;
+
+  // Plasma parameters
+  Field3D logLambda, lambda_0, lambda;
 
   //Normalisations
   BoutReal n_t, c_st;
@@ -83,13 +88,12 @@ private:
   Field3D w = 0.0;
 
   // Time derivatives
-  Field3D ddt_T, ddt_n, ddt_v, v_f;
+  Field3D ddt_T, ddt_n, ddt_v;
 
   // Number of non boundary grid points
   int N = mesh->yend-mesh->ystart+1;
 
 protected:
-
   // This is called once at the start
   int init(bool restarting) override {
 
@@ -104,9 +108,12 @@ protected:
 
     OPTION(Options::getRoot()->getSection("mesh"), length, 1.0);
 
+	// Target heat condition
+	q_in = -5.5 * T_t * n_t * c_st * SI::qe;
+	S_u = -2*q_in/length;
+
     FieldFactory f(mesh);
     S_n = f.create3D("n:S_n");
-    S_u = f.create3D("T:S_u");
 
     v.setLocation(CELL_YLOW); // Stagger
     qSH.setLocation(CELL_YLOW); // Stagger
@@ -119,10 +126,11 @@ protected:
 
 
     SOLVE_FOR3(T, n, v);
-    SAVE_REPEAT4(q, qSH, p, p_dyn);
+    SAVE_REPEAT5(q, qSH, qFS, p, p_dyn);
     SAVE_REPEAT3(ddt_n, ddt_T, ddt_v)
-    SAVE_REPEAT4(A, B, C, v_centre)
+    SAVE_REPEAT(v_centre);
 
+	SAVE_REPEAT2(lambda, logLambda);
     SAVE_ONCE4(kappa_0, q_in, T_t, length);
     SAVE_ONCE4(S_n, n_t, c_st, S_u);
     SAVE_ONCE(ypos);
@@ -149,13 +157,10 @@ protected:
 
     std::vector<BoutReal> n_arr = field_to_vector(interp_to(n, loc));
     std::vector<BoutReal> T_arr = field_to_vector(interp_to(T, loc));
+	std::vector<BoutReal> lambda_arr = field_to_vector(interp_to(lambda, loc));
 
     return [=](int i1, int i2){
-    BoutReal lambda_0, lambda, logLambda;
-    logLambda = 15.2 - 0.5*log(n_arr[i2] * (n_t/1e20)) + log(T_arr[i2]/1000);
-    lambda_0 = (2.5e17/n_t) * T_arr[i2] / (n_arr[i2] * logLambda);
-    lambda = a * sqrt(Z+1)*lambda_0;
-    return exp(-abs(TrapeziumIntegrate(n_arr, i2, i1, length/N))/(lambda*n_arr[i2]))/(2*lambda);};
+    return exp(-abs(TrapeziumIntegrate(n_arr, i2, i1, length/N)) / (lambda_arr[i2]*n_arr[i2])) / (2*lambda_arr[i2]);};
   }
 
   Field3D heat_convolution(Field3D qSH, CELL_LOC loc) const{
@@ -224,9 +229,24 @@ protected:
     qSH(0,N+2,0) = (T(0,N+2,0)-T(0,N+1,0))/mesh->coordinates()->dy(0,0,0);
     qSH *= -kappa_0 * pow(interp_to(T, CELL_YLOW), 2.5);
 
+	// Plasma parameter functions
+	logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
+	lambda_0 = (2.5e17/n_t) * T / (n * logLambda);
+	lambda = 32 * sqrt(2)*lambda_0;
+
     // For tidiness, doesn't actually affect anything
     qSH(0,0,0) = 0; qSH(0,1,0) = 0;  qSH(0,N+3,0) = 0;
 
+	// Free streaming heat flow
+	qFS = 0.03 * n * T * SI::qe * (T/m_e);
+
+	// Limited heat
+    q = ((qSH * qFS) / (qSH + qFS));
+
+    // Plain Spitzer-Harm
+    q = qSH;
+
+    // Convolution heat
     q = heat_convolution(qSH, CELL_YLOW);
 
     // Fluid pressure
@@ -239,7 +259,6 @@ protected:
     n.applyTDerivBoundary();
     ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( S_u - DDY(q, CELL_CENTRE, DIFF_C2) ); //+ VDDY(v,p, CELL_CENTRE)) + (T/n) * ddt(n);
 
-    A=0;B=0;C=0;
     v_centre=interp_to(v, CELL_CENTRE);
 
     ddt_T = ddt(T);
