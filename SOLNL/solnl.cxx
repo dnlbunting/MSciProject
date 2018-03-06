@@ -226,6 +226,7 @@ protected:
     // But the extrapolation can sometimes make it negative
     // which causes a problem with the T^2.5 term.
     T(0,0,0) = T_t; T(0,N+3,0) = T_t;
+    T = floor(T, 0.);
 
     // Need to calculate the value of q one cell into the right boundary
     // because this cell is ON the boundary now as a result of being staggered
