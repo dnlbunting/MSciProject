@@ -176,7 +176,6 @@ protected:
       std::vector<BoutReal> F(N+1, 0);
       for (int k = mesh->ystart; k < mesh->yend+2; ++k) {
           F[k-mesh->ystart] = q_arr[k] * kernel(j, k);
-          X(j-mesh->ystart, k-mesh->ystart) = kernel(j, k);
       }
       return TrapeziumIntegrate(F, 0, N, length/N);
     };
@@ -212,6 +211,7 @@ protected:
 
     n(0,0,0) = (3*n(0,1,0) - n(0,2,0))/2.;
     n(0,N+3,0) = (3*n(0,N+2,0) - n(0,N+1,0))/2.;
+    n = floor(n, 1e-6);
 
     v(0,0,0) = (3*v(0,1,0) - v(0,2,0)) / 2.;
     v(0,N+3,0) = (3*v(0,N+2,0) - v(0,N+1,0)) / 2.;
