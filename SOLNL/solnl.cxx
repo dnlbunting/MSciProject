@@ -193,7 +193,7 @@ protected:
 
     std::vector<std::future<BoutReal>> futures(N+1);
     for (int j = mesh->ystart; j < mesh->yend+2; ++j) {
-      futures[j- mesh->ystart] = std::async(std::launch::deferred, std::bind(parallel_core, j));
+      futures[j- mesh->ystart] = std::async(std::launch::async, std::bind(parallel_core, j));
     }
 
     // Collect the futures
