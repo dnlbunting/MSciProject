@@ -59,6 +59,9 @@ BoutReal TrapeziumIntegrate(std::vector<BoutReal> f, int i1, int i2, BoutReal dx
   return result;
 }
 
+typedef int HEAT_TYPE;
+enum{SPITZER_HARM=0, LIMTED=1, CONVOLUTION=2};
+
 class SOLNL : public PhysicsModel {
 private:
 
@@ -93,6 +96,8 @@ private:
   // Number of non boundary grid points
   int N = mesh->yend-mesh->ystart+1;
 
+  HEAT_TYPE heat_type;
+
 protected:
   // This is called once at the start
   int init(bool restarting) override {
@@ -103,14 +108,15 @@ protected:
     OPTION(options, q_in, 1.0);
     OPTION(options, T_t, 1.0);
     OPTION(options, n_t, 1.0);
+    OPTION(options, heat_type, 0);
 
     c_st = sqrt(2*SI::qe*T_t/m_i);
 
     OPTION(Options::getRoot()->getSection("mesh"), length, 1.0);
 
-	// Target heat condition
-	q_in = -5.5 * T_t * n_t * c_st * SI::qe;
-	S_u = -2*q_in/length;
+	  // Target heat condition
+	  q_in = -5.5 * T_t * n_t * c_st * SI::qe;
+	  S_u = -2*q_in/length;
 
     FieldFactory f(mesh);
     S_n = f.create3D("n:S_n");
@@ -124,16 +130,16 @@ protected:
     ypos.applyBoundary("upper_target", "free_o3");
     ypos.mergeYupYdown();
 
-
     SOLVE_FOR3(T, n, v);
+
     SAVE_REPEAT5(q, qSH, qFS, p, p_dyn);
     SAVE_REPEAT3(ddt_n, ddt_T, ddt_v)
     SAVE_REPEAT(v_centre);
-
     SAVE_REPEAT2(lambda, logLambda);
+
     SAVE_ONCE4(kappa_0, q_in, T_t, length);
     SAVE_ONCE4(S_n, n_t, c_st, S_u);
-    SAVE_ONCE(ypos);
+    SAVE_ONCE2(ypos, heat_type);
 
     return 0;
   }
@@ -187,7 +193,7 @@ protected:
 
     std::vector<std::future<BoutReal>> futures(N+1);
     for (int j = mesh->ystart; j < mesh->yend+2; ++j) {
-      futures[j- mesh->ystart] = std::async(std::launch::deferred, std::bind(parallel_core, j));
+      futures[j- mesh->ystart] = std::async(std::launch::async, std::bind(parallel_core, j));
     }
 
     // Collect the futures
@@ -211,6 +217,7 @@ protected:
 
     n(0,0,0) = (3*n(0,1,0) - n(0,2,0))/2.;
     n(0,N+3,0) = (3*n(0,N+2,0) - n(0,N+1,0))/2.;
+    n = floor(n, 1e-6);
 
     v(0,0,0) = (3*v(0,1,0) - v(0,2,0)) / 2.;
     v(0,N+3,0) = (3*v(0,N+2,0) - v(0,N+1,0)) / 2.;
@@ -219,6 +226,7 @@ protected:
     // But the extrapolation can sometimes make it negative
     // which causes a problem with the T^2.5 term.
     T(0,0,0) = T_t; T(0,N+3,0) = T_t;
+    T = floor(T, 0.);
 
     // Need to calculate the value of q one cell into the right boundary
     // because this cell is ON the boundary now as a result of being staggered
@@ -228,25 +236,30 @@ protected:
     qSH(0,N+2,0) = (T(0,N+2,0)-T(0,N+1,0))/mesh->coordinates()->dy(0,0,0);
     qSH *= -kappa_0 * pow(interp_to(T, CELL_YLOW), 2.5);
 
-	// Plasma parameter functions
-	logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
-	lambda_0 = (2.5e17/n_t) * T / (n * logLambda);
-	lambda = 32 * sqrt(2)*lambda_0;
-
     // For tidiness, doesn't actually affect anything
     qSH(0,0,0) = 0; qSH(0,1,0) = 0;  qSH(0,N+3,0) = 0;
 
-	// Free streaming heat flow
-	qFS = 0.03 * n * T * SI::qe * (T/m_e);
+	  // Plasma parameter functions
+	  logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
+	  lambda_0 = (2.5e17/n_t) * T / (n * logLambda);
+	  lambda = 32 * sqrt(2)*lambda_0;
 
-	// Limited heat
-    q = ((qSH * qFS) / (qSH + qFS));
+    // Free streaming heat flow
+    qFS = 0.03 * n * T * SI::qe * (T/m_e);
 
-    // Plain Spitzer-Harm
-    q = qSH;
+    switch(heat_type){
+        case SPITZER_HARM :
+            q = qSH;
+        break;
 
-    // Convolution heat
-    q = heat_convolution(qSH, CELL_YLOW);
+        case LIMTED :
+            q = ((qSH * qFS) / (qSH + qFS));
+        break;
+
+        case CONVOLUTION :
+            q = heat_convolution(qSH, CELL_YLOW);
+        break;
+    }
 
     // Fluid pressure
     p = 2*(n_t*n)*SI::qe*T;
