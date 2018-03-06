@@ -130,7 +130,7 @@ protected:
     SAVE_REPEAT3(ddt_n, ddt_T, ddt_v)
     SAVE_REPEAT(v_centre);
 
-	SAVE_REPEAT2(lambda, logLambda);
+    SAVE_REPEAT2(lambda, logLambda);
     SAVE_ONCE4(kappa_0, q_in, T_t, length);
     SAVE_ONCE4(S_n, n_t, c_st, S_u);
     SAVE_ONCE(ypos);
@@ -176,7 +176,6 @@ protected:
       std::vector<BoutReal> F(N+1, 0);
       for (int k = mesh->ystart; k < mesh->yend+2; ++k) {
           F[k-mesh->ystart] = q_arr[k] * kernel(j, k);
-          X(j-mesh->ystart, k-mesh->ystart) = kernel(j, k);
       }
       return TrapeziumIntegrate(F, 0, N, length/N);
     };
