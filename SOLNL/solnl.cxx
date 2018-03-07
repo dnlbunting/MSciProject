@@ -62,6 +62,9 @@ BoutReal TrapeziumIntegrate(std::vector<BoutReal> f, int i1, int i2, BoutReal dx
 typedef int HEAT_TYPE;
 enum{SPITZER_HARM=0, LIMTED=1, CONVOLUTION=2, PULSE=3};
 
+typedef int PULSE;
+enum{OFF=0, ON=1};
+
 class SOLNL : public PhysicsModel {
 private:
 
@@ -97,6 +100,7 @@ private:
   int N = mesh->yend-mesh->ystart+1;
 
   HEAT_TYPE heat_type;
+  PULSE pulse;
 
 protected:
   // This is called once at the start
@@ -109,6 +113,7 @@ protected:
     OPTION(options, T_t, 1.0);
     OPTION(options, n_t, 1.0);
     OPTION(options, heat_type, 0);
+	OPTION(options, pulse, 0);
 
     c_st = sqrt(2*SI::qe*T_t/m_i);
 
@@ -257,14 +262,10 @@ protected:
         case CONVOLUTION :
             q = heat_convolution(qSH, CELL_YLOW);
         break;
-
-		case PULSE :
-			q = qSH;
-		break;
-    }
+	}
 
 	// Introduce a pulse of particles at upstream
-	if (t >= 1.0e-2 && heat_type == PULSE) {
+	if (t >= 1.0e-2 && pulse == ON) {
 		S_n = Sn_bg + 10*Sn_pl*exp(-(t-1e-2)/1e-5); // particle pulse for 1 microsec
 	}
 	else {

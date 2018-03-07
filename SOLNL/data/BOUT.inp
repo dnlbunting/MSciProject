@@ -12,6 +12,7 @@ T_t = 20
 n_t = 1e19
 L_iz = 5
 heat_type = 0 # 0=Spitzer-Harm, 1=limited, 2=convolution, 3=pulse
+pulse = 1
 
 ##################################################
 [mesh]  # Geometry of the mesh
