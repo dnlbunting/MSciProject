@@ -60,7 +60,7 @@ BoutReal TrapeziumIntegrate(std::vector<BoutReal> f, int i1, int i2, BoutReal dx
 }
 
 typedef int HEAT_TYPE;
-enum{SPITZER_HARM=0, LIMTED=1, CONVOLUTION=2, PULSE=3};
+enum{SPITZER_HARM=0, LIMTED=1, CONVOLUTION=2};
 
 typedef int PULSE;
 enum{OFF=0, ON=1};
