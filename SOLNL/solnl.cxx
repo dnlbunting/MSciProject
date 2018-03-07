@@ -60,7 +60,7 @@ BoutReal TrapeziumIntegrate(std::vector<BoutReal> f, int i1, int i2, BoutReal dx
 }
 
 typedef int HEAT_TYPE;
-enum{SPITZER_HARM=0, LIMTED=1, CONVOLUTION=2};
+enum{SPITZER_HARM=0, LIMTED=1, CONVOLUTION=2, PULSE=3};
 
 class SOLNL : public PhysicsModel {
 private:
@@ -74,7 +74,7 @@ private:
   Field3D A,B,C, gamma;
 
   // Source terms
-  Field3D S_n, S_u, ypos;
+  Field3D Sn_bg, Sn_pl, S_n, S_u, ypos;
 
   // Constants
   BoutReal kappa_0, q_in, T_t, length;
@@ -119,7 +119,8 @@ protected:
 	  S_u = -2*q_in/length;
 
     FieldFactory f(mesh);
-    S_n = f.create3D("n:S_n");
+    Sn_bg = f.create3D("n:Sn_bg");
+	Sn_pl = f.create3D("n:Sn_pl");
 
     v.setLocation(CELL_YLOW); // Stagger
     qSH.setLocation(CELL_YLOW); // Stagger
@@ -134,11 +135,11 @@ protected:
 
     SAVE_REPEAT5(q, qSH, qFS, p, p_dyn);
     SAVE_REPEAT3(ddt_n, ddt_T, ddt_v)
-    SAVE_REPEAT(v_centre);
-    SAVE_REPEAT2(lambda, logLambda);
+    SAVE_REPEAT2(v_centre, S_n);
+    SAVE_REPEAT3(lambda, logLambda, lambda_0);
 
     SAVE_ONCE4(kappa_0, q_in, T_t, length);
-    SAVE_ONCE4(S_n, n_t, c_st, S_u);
+    SAVE_ONCE5(Sn_bg, Sn_pl, n_t, c_st, S_u);
     SAVE_ONCE2(ypos, heat_type);
 
     return 0;
@@ -158,8 +159,6 @@ protected:
      between threads by pulling the important stuff
      into a closure */
   std::function<double(int,int)>  make_kernel(CELL_LOC loc) const{
-    BoutReal Z = 1;
-    BoutReal a = 32;
 
     std::vector<BoutReal> n_arr = field_to_vector(interp_to(n, loc));
     std::vector<BoutReal> T_arr = field_to_vector(interp_to(T, loc));
@@ -211,7 +210,6 @@ protected:
     return interp_to(heat, loc);
   }
 
-
   int rhs(BoutReal t) override {
     mesh->communicate(n,v,T);
 
@@ -241,11 +239,11 @@ protected:
 
 	  // Plasma parameter functions
 	  logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
-	  lambda_0 = (2.5e17/n_t) * T / (n * logLambda);
+	  lambda_0 = (2.5e17/n_t) * T * T / (n * logLambda);
 	  lambda = 32 * sqrt(2)*lambda_0;
 
     // Free streaming heat flow
-    qFS = 0.03 * n * T * SI::qe * (T/m_e);
+    qFS = 0.03 * n * T * SI::qe * (2*T*SI::qe/m_e);
 
     switch(heat_type){
         case SPITZER_HARM :
@@ -259,7 +257,20 @@ protected:
         case CONVOLUTION :
             q = heat_convolution(qSH, CELL_YLOW);
         break;
+
+		case PULSE :
+			q = qSH;
+		break;
     }
+
+	// Introduce a pulse of particles at upstream
+	if (t >= 1.0e-2 && heat_type == PULSE) {
+		S_n = Sn_bg + 10*Sn_pl*exp(-(t-1e-2)/1e-5); // particle pulse for 1 microsec
+	}
+	else {
+		S_n = Sn_bg;
+	}
+
 
     // Fluid pressure
     p = 2*(n_t*n)*SI::qe*T;
