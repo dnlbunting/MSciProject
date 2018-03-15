@@ -13,6 +13,10 @@
 #include <vector>
 #include <math.h>
 
+#include "/usr/local/include/xtensor/xarray.hpp"
+#include "/usr/local/include/xtensor/xio.hpp"
+#include "/usr/local/include/xtensor/xnpy.hpp"
+
 BoutReal TrapeziumIntegrate(Field3D f, int i1, int i2, BoutReal dx){
   BoutReal result = 0.5*(f(0,i1,0) + f(0,i2,0));
 
@@ -130,6 +134,7 @@ protected:
     v.setLocation(CELL_YLOW); // Stagger
     qSH.setLocation(CELL_YLOW); // Stagger
     q.setLocation(CELL_YLOW); // Stagger
+	p.mergeYupYdown();
 
     ypos = f.create3D("mesh:ypos");
     ypos.applyBoundary("lower_target", "free_o3");
@@ -158,6 +163,14 @@ protected:
     return 0;
   }
 
+  xt::xarray<double> FieldToArray (const Field3D F) const{
+     xt::xarray<double> X = xt::zeros<double>({mesh->LocalNy});
+     for (int k = 0; k < mesh->LocalNy; ++k) {
+       X(k) =  F(0,k,0);
+     }
+   return X;
+ }
+
   /* Weird stuff happens in the Field3D constructor
      that breaks the threaded integrals so just pull
      the 1D data we need into a vector */
@@ -173,7 +186,7 @@ protected:
      into a closure */
   std::function<double(int,int)>  make_kernel(CELL_LOC loc) const{
 
-    std::vector<BoutReal> n_arr = field_to_vector(interp_to(n, loc));
+    std::vector<BoutReal> n_arr = field_to_vector(interp_to(n*n_t, loc));
     std::vector<BoutReal> T_arr = field_to_vector(interp_to(T, loc));
 	std::vector<BoutReal> lambda_arr = field_to_vector(interp_to(lambda, loc));
 
@@ -190,14 +203,16 @@ protected:
     std::function<double(int,int)> kernel = make_kernel(qSH.getLocation());
     std::vector<BoutReal> q_arr = field_to_vector(qSH);
 
+	xt::xarray<double> X = xt::zeros<double>({N+1,N+1}) - 1;
+
     auto parallel_core = [&](int j) {
       std::vector<BoutReal> F(N+1, 0);
       for (int k = mesh->ystart; k < mesh->yend+2; ++k) {
           F[k-mesh->ystart] = q_arr[k] * kernel(j, k);
+		  X(j-mesh->ystart, k-mesh->ystart) = kernel(j, k);
       }
       return TrapeziumIntegrate(F, 0, N, length/N);
     };
-
 
     // Launch the futures
     Field3D heat = 0.0;
@@ -212,6 +227,10 @@ protected:
     for (int j = mesh->ystart; j < mesh->yend+2; ++j) {
       heat(0,j,0) = futures[j-mesh->ystart].get();
     }
+
+	//xt::dump_npy("/Users/HannahWhitham/Project/MSciProject/ELM/qSH.npy", FieldToArray(qSH));
+	//xt::dump_npy("/Users/HannahWhitham/Project/MSciProject/ELM/q.npy", FieldToArray(heat));
+	xt::dump_npy("/Users/HannahWhitham/Project/MSciProject/ELM/kernel.npy", X);
 
     // These extrapolated boundaries are technically invalid,
     // but necessary to use interp_to to shift ylow <-> ycenter
@@ -252,11 +271,11 @@ protected:
 
 	// Plasma parameter functions
 	logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log((T/1000));
-	lambda_0 = (2.5e17  * T) / (n * n_t * logLambda);
+	lambda_0 = (2.5e17  * T * T) / (n * n_t * logLambda);
 	lambda = 32 * sqrt(2) * lambda_0;
 
     // Free streaming heat flow
-    qFS = 0.03 * interp_to(n, CELL_YLOW) * n_t * interp_to(T, CELL_YLOW) * SI::qe * sqrt(2*interp_to(T, CELL_YLOW)*SI::qe/m_e);
+    qFS = 0.03 * interp_to(n, CELL_YLOW) * n_t * interp_to(T, CELL_YLOW) * SI::qe * pow((2*interp_to(T, CELL_YLOW)*SI::qe/m_e),1.5);
 
     switch(heat_type){
         case SPITZER_HARM :
@@ -268,15 +287,14 @@ protected:
         break;
 
         case CONVOLUTION :
-			q = heat_convolution(qSH, CELL_YLOW);
-
+			q = -heat_convolution(qSH, CELL_YLOW);
         break;
     }
 
-	// Sheath heat condition
+	// Sheath heat condition DO NOT TOUCH THEM THEY ARE CORRECT!!!!!
 	T_stag = interp_to(T, CELL_YLOW);
 	n_stag = interp_to(n, CELL_YLOW);
-	BoutReal qt_low = -5.5 * T_stag(0,1,0) * n_stag(0,1,0)*  n_t * sqrt(2*SI::qe*T_stag(0,1,0)/m_i) * SI::qe;
+	BoutReal qt_low = -5.5 * T_stag(0,2,0) * n_stag(0,2,0)*  n_t * sqrt(2*SI::qe*T_stag(0,2,0)/m_i) * SI::qe;
 	BoutReal qt_upr = 5.5 * T_stag(0,N+2,0) * n_stag(0,N+2,0) * n_t * sqrt(2*SI::qe*T_stag(0,N+2,0)/m_i) * SI::qe;
 	q.applyBoundary("lower_target", "dirichlet(" + std::to_string(qt_low) + ")");
 	q.applyBoundary("upper_target", "dirichlet(" + std::to_string(qt_upr) + ")");
@@ -315,9 +333,10 @@ protected:
 
     // Fluid equations
     ddt(n) = c_st * (S_n - FDDY(v, n, CELL_CENTRE));
-    ddt(v) = (-DDY(p, CELL_YLOW))/(m_i*n*n_t*c_st) - c_st*(2 * VDDY(v, v, CELL_YLOW)  +  v*(VDDY(v, n, CELL_YLOW)/n));
+    ddt(v) = (-DDY(p, CELL_YLOW)) / (m_i*n*n_t*c_st) - c_st * (2 * VDDY(v, v, CELL_YLOW)  +  v * (VDDY(v, n, CELL_YLOW)/n));
     n.applyTDerivBoundary();
-    ddt(T) = (1 / (3 * n_t * n * SI::qe)) * (S_u - DDY(q, CELL_CENTRE, DIFF_C2)); //+ VDDY(v,p, CELL_CENTRE)) + (T/n) * ddt(n);
+
+    ddt(T) = (1 / (3 * n_t * n * SI::qe)) * (S_u - DDY(q, CELL_CENTRE, DIFF_C2) + VDDY(v,p, CELL_CENTRE)) + (T/n) * ddt(n);
 
     v_centre=interp_to(v, CELL_CENTRE);
 
