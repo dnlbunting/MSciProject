@@ -55,8 +55,8 @@ mxstep = 5000
 [T]
 scale = 1.0
 function = SHConduction:T_t
-bndry_ydown=dirichlet_o2(SHConduction:T_t)
-bndry_yup=dirichlet_o2(SHConduction:T_t)
+bndry_ydown=none #dirichlet_o2(SHConduction:T_t)
+bndry_yup=none #dirichlet_o2(SHConduction:T_t)
 
 [n]
 scale = 1.0
