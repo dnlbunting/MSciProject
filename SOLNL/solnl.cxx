@@ -140,7 +140,7 @@ protected:
     SAVE_REPEAT5(q, qSH, qFS, p, p_dyn);
     SAVE_REPEAT3(ddt_n, ddt_T, ddt_v)
     SAVE_REPEAT(v_centre);
-	SAVE_REPEAT2(lambda, logLambda);
+    SAVE_REPEAT2(lambda, logLambda);
 
     SAVE_ONCE4(kappa_0, q_in, T_t, length);
     SAVE_ONCE4(S_n, n_t, c_st, S_u);
@@ -268,11 +268,11 @@ protected:
 
 	  // Plasma parameter functions
 	  logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
-	  lambda_0 = (2.5e17/n_t) * T / (n * logLambda);
-	  lambda = 32 * sqrt(2)*lambda_0;
+	  lambda_0 = (2.5e17/n_t) * T * T / (n * logLambda);
+	  lambda = 32 * sqrt(2) * lambda_0;
 
     // Free streaming heat flow
-    qFS = 0.03 * n * T * SI::qe * (T/m_e);
+    qFS = 0.03 * n * T * SI::qe * (2*T*SI::qe/m_e);
 
     switch(heat_type){
         case SPITZER_HARM :
