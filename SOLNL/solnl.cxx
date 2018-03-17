@@ -13,6 +13,10 @@
 #include <future>
 #include <vector>
 
+#include "/usr/local/include/xtensor/xarray.hpp"
+#include "/usr/local/include/xtensor/xio.hpp"
+#include "/usr/local/include/xtensor/xnpy.hpp"
+
 BoutReal TrapeziumIntegrate(Field3D f, int i1, int i2, BoutReal dx){
   BoutReal result = 0.5*(f(0,i1,0) + f(0,i2,0));
 
@@ -97,6 +101,7 @@ private:
   int N = mesh->yend-mesh->ystart+1;
 
   HEAT_TYPE heat_type;
+  xt::xarray<double> X;
 
 protected:
   // This is called once at the start
@@ -140,6 +145,28 @@ protected:
     SAVE_ONCE4(kappa_0, q_in, T_t, length);
     SAVE_ONCE4(S_n, n_t, c_st, S_u);
     SAVE_ONCE2(ypos, heat_type);
+
+    return 0;
+  }
+
+  int outputMonitor(BoutReal simtime, int iter, int NOUT) {
+
+    if (iter == -1){
+      X = xt::zeros<double>({NOUT, N+1 ,N+1}) * nan("");
+      return 0;
+    }
+
+    std::function<double(int,int)> kernel = make_kernel(qSH.getLocation());
+    std::vector<BoutReal> q_arr = field_to_vector(qSH);
+    for (int j = mesh->ystart; j < mesh->yend+2; ++j) {
+      for (int k = mesh->ystart; k < mesh->yend+2; ++k) {
+          X(iter, j-mesh->ystart, k-mesh->ystart) = kernel(j, k);
+      }
+    }
+
+    if (iter % 100 == 0){
+         xt::dump_npy("./kernel.npy", X);
+    }
 
     return 0;
   }
