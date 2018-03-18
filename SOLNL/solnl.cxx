@@ -180,17 +180,14 @@ protected:
     return arr;
   }
 
-
   /* Avoid having shared copies of the PhysicsModel
      between threads by pulling the important stuff
      into a closure */
   std::function<double(int,int)>  make_kernel(CELL_LOC loc) const{
-    BoutReal Z = 1;
-    BoutReal a = 32;
 
     std::vector<BoutReal> n_arr = field_to_vector(interp_to(n, loc));
     std::vector<BoutReal> T_arr = field_to_vector(interp_to(T, loc));
-	std::vector<BoutReal> lambda_arr = field_to_vector(interp_to(lambda, loc));
+    std::vector<BoutReal> lambda_arr = field_to_vector(interp_to(lambda, loc));
 
     return [=](int i1, int i2){
     return exp(-abs(TrapeziumIntegrate(n_arr, i2, i1, length/N)) / (lambda_arr[i2]*n_arr[i2])) / (2*lambda_arr[i2]);};
@@ -269,10 +266,10 @@ protected:
 	  // Plasma parameter functions
 	  logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
 	  lambda_0 = (2.5e17/n_t) * T * T / (n * logLambda);
-	  lambda = 32 * sqrt(2) * lambda_0;
+	  lambda = 32 * sqrt(2) * interp_to(lambda_0, CELL_YLOW);
 
     // Free streaming heat flow
-    qFS = 0.03 * n * T * SI::qe * (2*T*SI::qe/m_e);
+    qFS =  0.03 * interp_to(n, CELL_YLOW) * n_t * interp_to(T, CELL_YLOW) * SI::qe * pow((2*interp_to(T, CELL_YLOW)*SI::qe/m_e),1.5);
 
     switch(heat_type){
         case SPITZER_HARM :
