@@ -300,11 +300,9 @@ protected:
 
     Field3D T_stag = interp_to(T, CELL_YLOW);
     Field3D n_stag = interp_to(n, CELL_YLOW);
-    BoutReal qt_low = -5.5 * T_stag(0,2,0) * n_stag(0,2,0)*  n_t * sqrt(2*SI::qe*T_stag(0,2,0)/m_i) * SI::qe;
-    BoutReal qt_upr = 5.5 * T_stag(0,N+2,0) * n_stag(0,N+2,0) * n_t * sqrt(2*SI::qe*T_stag(0,N+2,0)/m_i) * SI::qe;
 
-    q.applyBoundary("lower_target", "dirichlet_o2(" + std::to_string(qt_low) + ")");
-    q.applyBoundary("upper_target", "dirichlet_o2(" + std::to_string(qt_upr) + ")");
+    q(0,2,0) = -5.5 * T_stag(0,2,0) * n_stag(0,2,0)*  n_t * sqrt(2*SI::qe*T_stag(0,2,0)/m_i) * SI::qe; // - q_conv(0,2,0);
+    q(0,N+2,0) = 5.5 * T_stag(0,N+2,0) * n_stag(0,N+2,0) * n_t * sqrt(2*SI::qe*T_stag(0,N+2,0)/m_i) * SI::qe; // - q_conv(0,N+2,0);
 
     // Fluid pressure
     p = 2*(n_t*n)*SI::qe*T;
