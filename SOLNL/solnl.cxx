@@ -102,6 +102,7 @@ private:
 
   HEAT_TYPE heat_type;
   xt::xarray<double> X;
+  bool knorm;
 
 protected:
   // This is called once at the start
@@ -114,6 +115,7 @@ protected:
     OPTION(options, T_t, 1.0);
     OPTION(options, n_t, 1.0);
     OPTION(options, heat_type, 0);
+    OPTION(options, knorm, false);
 
     c_st = sqrt(2*SI::qe*T_t/m_i);
 
@@ -189,8 +191,16 @@ protected:
     std::vector<BoutReal> T_arr = field_to_vector(interp_to(T, loc));
     std::vector<BoutReal> lambda_arr = field_to_vector(interp_to(lambda, loc));
 
-    return [=](int i1, int i2){
-    return exp(-abs(TrapeziumIntegrate(n_arr, i2, i1, length/N)) / (lambda_arr[i2]*n_arr[i2])) / (2*lambda_arr[i2]);};
+    if (knorm) {
+        return [=](int i1, int i2){
+          return exp(-abs(TrapeziumIntegrate(n_arr, i2, i1, length/N)) / (lambda_arr[i2]*n_arr[i2]));
+        };
+    }
+    else{
+      return [=](int i1, int i2){
+        return exp(-abs(TrapeziumIntegrate(n_arr, i2, i1, length/N)) / (lambda_arr[i2]*n_arr[i2]))/(2*lambda_arr[i2]);
+      };
+    }
   }
 
   Field3D heat_convolution(Field3D qSH, CELL_LOC loc) const{
@@ -204,12 +214,15 @@ protected:
 
     auto parallel_core = [&](int j) {
       std::vector<BoutReal> F(N+1, 0);
+      std::vector<BoutReal> G(N+1, 1);
       for (int k = mesh->ystart; k < mesh->yend+2; ++k) {
           F[k-mesh->ystart] = q_arr[k] * kernel(j, k);
+          if (knorm){G[k-mesh->ystart] = kernel(j, k);}
       }
-      return TrapeziumIntegrate(F, 0, N, length/N);
+      BoutReal ret = TrapeziumIntegrate(F, 0, N, length/N);
+      if (knorm) { ret = ret/TrapeziumIntegrate(G, 0, N, length/N);}
+      return ret;
     };
-
 
     // Launch the futures
     Field3D heat = 0.0;
