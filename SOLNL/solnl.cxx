@@ -298,6 +298,10 @@ protected:
         break;
     }
 
+    //Convection term
+    Field3D q_conv = 2.5*SI::qe*n_t*c_st*v*interp_to(n*T, CELL_YLOW);
+    q = q + q_conv;
+
     Field3D T_stag = interp_to(T, CELL_YLOW);
     Field3D n_stag = interp_to(n, CELL_YLOW);
 
@@ -306,13 +310,14 @@ protected:
 
     // Fluid pressure
     p = 2*(n_t*n)*SI::qe*T;
+    p.mergeYupYdown();
     p_dyn = m_i * (n_t*n) * (c_st*v) * (c_st*v);
 
     // Fluid equations
     ddt(n) =  c_st * (S_n - FDDY(v, n, CELL_CENTRE));
     ddt(v) = (-DDY(p, CELL_YLOW))/(m_i*n*n_t*c_st) - c_st*(2 * VDDY(v, v, CELL_YLOW)  +  v*(VDDY(v, n, CELL_YLOW)/n));
     n.applyTDerivBoundary();
-    ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( S_u - DDY(q, CELL_CENTRE, DIFF_C2) ); //+ VDDY(v,p, CELL_CENTRE)) + (T/n) * ddt(n);
+    ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( S_u - DDY(q, CELL_CENTRE, DIFF_C2) + VDDY(v, p, CELL_CENTRE)) + (T/n) * ddt(n);
 
     v_centre=interp_to(v, CELL_CENTRE);
 
