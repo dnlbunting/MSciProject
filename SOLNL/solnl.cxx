@@ -13,6 +13,11 @@
 #include <future>
 #include <vector>
 
+#include "/usr/local/include/xtensor/xarray.hpp"
+#include "/usr/local/include/xtensor/xio.hpp"
+#include "/usr/local/include/xtensor/xnpy.hpp"
+
+
 BoutReal TrapeziumIntegrate(Field3D f, int i1, int i2, BoutReal dx){
   BoutReal result = 0.5*(f(0,i1,0) + f(0,i2,0));
 
@@ -62,9 +67,6 @@ BoutReal TrapeziumIntegrate(std::vector<BoutReal> f, int i1, int i2, BoutReal dx
 typedef int HEAT_TYPE;
 enum{SPITZER_HARM=0, LIMTED=1, CONVOLUTION=2};
 
-typedef int PULSE;
-enum{OFF=0, ON=1};
-
 class SOLNL : public PhysicsModel {
 private:
 
@@ -72,12 +74,13 @@ private:
   Field3D T, n, v;
 
   // Derived quantities
-  Field3D p, q, p_dyn, qSH, qFS, v_centre;
+  Field3D p, q, p_dyn, qSH, qFS, v_centre, q_centre;
 
   Field3D A,B,C, gamma;
 
   // Source terms
-  Field3D Sn_bg, Sn_pl, S_n, S_u, ypos;
+  Field3D S_n, S_u, ypos;
+  BoutReal Liz_l, Liz_u;
 
   // Constants
   BoutReal kappa_0, q_in, T_t, length;
@@ -100,7 +103,8 @@ private:
   int N = mesh->yend-mesh->ystart+1;
 
   HEAT_TYPE heat_type;
-  PULSE pulse;
+  xt::xarray<double> X;
+  bool knorm;
 
 protected:
   // This is called once at the start
@@ -113,7 +117,7 @@ protected:
     OPTION(options, T_t, 1.0);
     OPTION(options, n_t, 1.0);
     OPTION(options, heat_type, 0);
-	OPTION(options, pulse, 0);
+    OPTION(options, knorm, false);
 
     c_st = sqrt(2*SI::qe*T_t/m_i);
 
@@ -124,8 +128,7 @@ protected:
 	  S_u = -2*q_in/length;
 
     FieldFactory f(mesh);
-    Sn_bg = f.create3D("n:Sn_bg");
-	Sn_pl = f.create3D("n:Sn_pl");
+    //S_n = f.create3D("n:S_n");
 
     v.setLocation(CELL_YLOW); // Stagger
     qSH.setLocation(CELL_YLOW); // Stagger
@@ -138,14 +141,38 @@ protected:
 
     SOLVE_FOR3(T, n, v);
 
+	SAVE_REPEAT3(T, n, v);
     SAVE_REPEAT5(q, qSH, qFS, p, p_dyn);
     SAVE_REPEAT3(ddt_n, ddt_T, ddt_v)
-    SAVE_REPEAT2(v_centre, S_n);
-    SAVE_REPEAT3(lambda, logLambda, lambda_0);
+    SAVE_REPEAT2(v_centre, q_centre);
+	SAVE_REPEAT3(S_n, Liz_l, Liz_u);
+    SAVE_REPEAT2(lambda, logLambda);
 
     SAVE_ONCE4(kappa_0, q_in, T_t, length);
-    SAVE_ONCE5(Sn_bg, Sn_pl, n_t, c_st, S_u);
+    SAVE_ONCE3(n_t, c_st, S_u);
     SAVE_ONCE2(ypos, heat_type);
+
+    return 0;
+  }
+
+  int outputMonitor(BoutReal simtime, int iter, int NOUT) override {
+
+    if (iter == -1){
+      X = xt::zeros<double>({NOUT, N+1 ,N+1}) * nan("");
+      return 0;
+    }
+
+    std::function<double(int,int)> kernel = make_kernel(qSH.getLocation());
+    std::vector<BoutReal> q_arr = field_to_vector(qSH);
+    for (int j = mesh->ystart; j < mesh->yend+2; ++j) {
+      for (int k = mesh->ystart; k < mesh->yend+2; ++k) {
+          X(iter, j-mesh->ystart, k-mesh->ystart) = kernel(j, k);
+      }
+    }
+
+    if (iter % 1000 == 0){
+         xt::dump_npy("./kernel.npy", X);
+    }
 
     return 0;
   }
@@ -159,7 +186,6 @@ protected:
     return arr;
   }
 
-
   /* Avoid having shared copies of the PhysicsModel
      between threads by pulling the important stuff
      into a closure */
@@ -167,10 +193,18 @@ protected:
 
     std::vector<BoutReal> n_arr = field_to_vector(interp_to(n, loc));
     std::vector<BoutReal> T_arr = field_to_vector(interp_to(T, loc));
-	std::vector<BoutReal> lambda_arr = field_to_vector(interp_to(lambda, loc));
+    std::vector<BoutReal> lambda_arr = field_to_vector(interp_to(lambda, loc));
 
-    return [=](int i1, int i2){
-    return exp(-abs(TrapeziumIntegrate(n_arr, i2, i1, length/N)) / (lambda_arr[i2]*n_arr[i2])) / (2*lambda_arr[i2]);};
+    if (knorm) {
+        return [=](int i1, int i2){
+          return exp(-abs(TrapeziumIntegrate(n_arr, i2, i1, length/N)) / (lambda_arr[i2]*n_arr[i2]));
+        };
+    }
+    else{
+      return [=](int i1, int i2){
+        return exp(-abs(TrapeziumIntegrate(n_arr, i2, i1, length/N)) / (lambda_arr[i2]*n_arr[i2]))/(2*lambda_arr[i2]);
+      };
+    }
   }
 
   Field3D heat_convolution(Field3D qSH, CELL_LOC loc) const{
@@ -184,12 +218,15 @@ protected:
 
     auto parallel_core = [&](int j) {
       std::vector<BoutReal> F(N+1, 0);
+      std::vector<BoutReal> G(N+1, 1);
       for (int k = mesh->ystart; k < mesh->yend+2; ++k) {
           F[k-mesh->ystart] = q_arr[k] * kernel(j, k);
+          if (knorm){G[k-mesh->ystart] = kernel(j, k);}
       }
-      return TrapeziumIntegrate(F, 0, N, length/N);
+      BoutReal ret = TrapeziumIntegrate(F, 0, N, length/N);
+      if (knorm) { ret = ret/TrapeziumIntegrate(G, 0, N, length/N);}
+      return ret;
     };
-
 
     // Launch the futures
     Field3D heat = 0.0;
@@ -215,21 +252,33 @@ protected:
     return interp_to(heat, loc);
   }
 
+
   int rhs(BoutReal t) override {
     mesh->communicate(n,v,T);
 
-    n(0,0,0) = (3*n(0,1,0) - n(0,2,0))/2.;
-    n(0,N+3,0) = (3*n(0,N+2,0) - n(0,N+1,0))/2.;
-    n = floor(n, 1e-6);
+    Field3D T_stag = interp_to(T, CELL_YLOW);
+    Field3D n_stag = interp_to(n, CELL_YLOW);
 
-    v(0,0,0) = (3*v(0,1,0) - v(0,2,0)) / 2.;
-    v(0,N+3,0) = (3*v(0,N+2,0) - v(0,N+1,0)) / 2.;
+    //n(0,0,0) = (3*n(0,1,0) - n(0,2,0))/2.;
+    //n(0,N+3,0) = (3*n(0,N+2,0) - n(0,N+1,0))/2.;
+    //n = floor(n, 1e-6);
+
+    //v(0,0,0) = (3*v(0,1,0) - v(0,2,0)) / 2.;
+    //v(0,N+3,0) = (3*v(0,N+2,0) - v(0,N+1,0)) / 2.;
+
+	v.applyBoundary("lower_target", "dirichlet(" + std::to_string(-sqrt(2*T_stag(0,2,0)*SI::qe/m_i)/c_st) + ")");
+	v.applyBoundary("upper_target", "dirichlet(" + std::to_string(sqrt(2*T_stag(0,N+2,0)*SI::qe/m_i)/c_st) + ")");
+
+	Liz_l = 3e19/(n_stag(0,2,0)*n_t);
+	Liz_u = 3e19/(n_stag(0,N+2,0)*n_t);;
+
+	S_n = exp(-ypos/Liz_l)/Liz_l + exp(-(length-ypos)/Liz_u)/Liz_u;
 
     // This cell doesn't get used, as we take only C2 derivatives
     // But the extrapolation can sometimes make it negative
     // which causes a problem with the T^2.5 term.
     T(0,0,0) = T_t; T(0,N+3,0) = T_t;
-    T = floor(T, 0.);
+    T = floor(T, 1.0);
 
     // Need to calculate the value of q one cell into the right boundary
     // because this cell is ON the boundary now as a result of being staggered
@@ -242,13 +291,13 @@ protected:
     // For tidiness, doesn't actually affect anything
     qSH(0,0,0) = 0; qSH(0,1,0) = 0;  qSH(0,N+3,0) = 0;
 
-	  // Plasma parameter functions
-	  logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
-	  lambda_0 = (2.5e17/n_t) * T * T / (n * logLambda);
-	  lambda = 32 * sqrt(2)*lambda_0;
+	// Plasma parameter functions
+	logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
+	lambda_0 = (2.5e17/n_t) * T * T / (n * logLambda);
+	lambda = 32 * sqrt(2) * interp_to(lambda_0, CELL_YLOW);
 
     // Free streaming heat flow
-    qFS = 0.03 * n * T * SI::qe * (2*T*SI::qe/m_e);
+    qFS =  0.03 * interp_to(n, CELL_YLOW) * n_t * interp_to(T, CELL_YLOW) * SI::qe * sqrt(2*interp_to(T, CELL_YLOW)*SI::qe/m_e);
 
     switch(heat_type){
         case SPITZER_HARM :
@@ -260,30 +309,38 @@ protected:
         break;
 
         case CONVOLUTION :
-            q = heat_convolution(qSH, CELL_YLOW);
+			if (t<=2e3) {
+				q = qSH;
+			}
+			else {
+            	q = heat_convolution(qSH, CELL_YLOW);
+			}
         break;
-	}
+    }
 
-	// Introduce a pulse of particles at upstream
-	if (t >= 1.0e-2 && pulse == ON) {
-		S_n = Sn_bg + 10*Sn_pl*exp(-(t-1e-2)/1e-5); // particle pulse for 1 microsec
-	}
-	else {
-		S_n = Sn_bg;
-	}
+	// Sheath heat condition
+	BoutReal qt_l = -5.5 * T_stag(0,2,0) * n_stag(0,2,0)*  n_t * sqrt(2*SI::qe*T_stag(0,2,0)/m_i) * SI::qe;
+	BoutReal qt_u = 5.5 * T_stag(0,N+2,0) * n_stag(0,N+2,0) * n_t * sqrt(2*SI::qe*T_stag(0,N+2,0)/m_i) * SI::qe;
+    q.applyBoundary("lower_target", "dirichlet(" + std::to_string(qt_l) + ")"); // - q_conv(0,2,0);
+    q.applyBoundary("upper_target", "dirichlet(" + std::to_string(qt_u) + ")"); // - q_conv(0,N+2,0);
 
+    //Convection term
+    //Field3D q_conv = 2.5*SI::qe*n_t*c_st*v*interp_to(n*T, CELL_YLOW);
+	//q = q + q_conv;
 
     // Fluid pressure
     p = 2*(n_t*n)*SI::qe*T;
+    p.mergeYupYdown();
     p_dyn = m_i * (n_t*n) * (c_st*v) * (c_st*v);
 
     // Fluid equations
     ddt(n) =  c_st * (S_n - FDDY(v, n, CELL_CENTRE));
     ddt(v) = (-DDY(p, CELL_YLOW))/(m_i*n*n_t*c_st) - c_st*(2 * VDDY(v, v, CELL_YLOW)  +  v*(VDDY(v, n, CELL_YLOW)/n));
     n.applyTDerivBoundary();
-    ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( S_u - DDY(q, CELL_CENTRE, DIFF_C2) ); //+ VDDY(v,p, CELL_CENTRE)) + (T/n) * ddt(n);
+    ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( S_u - DDY(q, CELL_CENTRE, DIFF_C2) + VDDY(v, p, CELL_CENTRE)) + (T/n) * ddt(n);
 
     v_centre=interp_to(v, CELL_CENTRE);
+	q_centre=interp_to(q, CELL_CENTRE);
 
     ddt_T = ddt(T);
     ddt_n = ddt(n);
