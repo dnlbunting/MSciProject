@@ -17,30 +17,6 @@
 #include "/usr/local/include/xtensor/xio.hpp"
 #include "/usr/local/include/xtensor/xnpy.hpp"
 
-BoutReal TrapeziumIntegrate(Field3D f, int i1, int i2, BoutReal dx){
-  BoutReal result = 0.5*(f(0,i1,0) + f(0,i2,0));
-
-  if (i1 == i2){
-    return 0.0;
-  }
-
-  else if (i1 > i2){
-    for (int i = i2+1; i < i1; ++i){
-      result += f(0,i,0);
-  }
-  result *= -dx;
-  }
-
-  else {
-    for (int i = i1+1; i < i2; ++i){
-      result += f(0,i,0);
-  }
-  result *= dx;
-  }
-
-  return result;
-}
-
 BoutReal TrapeziumIntegrate(std::vector<BoutReal> f, int i1, int i2, BoutReal dx){
   BoutReal result = 0.;
 
