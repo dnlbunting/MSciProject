@@ -103,7 +103,6 @@ private:
   int N = mesh->yend-mesh->ystart+1;
 
   HEAT_TYPE heat_type;
-  xt::xarray<double> X;
   bool knorm;
 
 protected:
@@ -141,12 +140,11 @@ protected:
 
     SOLVE_FOR3(T, n, v);
 
-	SAVE_REPEAT3(T, n, v);
     SAVE_REPEAT5(q, qSH, qFS, p, p_dyn);
     SAVE_REPEAT3(ddt_n, ddt_T, ddt_v)
     SAVE_REPEAT2(v_centre, q_centre);
 	SAVE_REPEAT3(S_n, Liz_l, Liz_u);
-    SAVE_REPEAT2(lambda, logLambda);
+    SAVE_REPEAT3(lambda,lambda_0, logLambda);
 
     SAVE_ONCE4(kappa_0, q_in, T_t, length);
     SAVE_ONCE3(n_t, c_st, S_u);
@@ -155,27 +153,27 @@ protected:
     return 0;
   }
 
-  int outputMonitor(BoutReal simtime, int iter, int NOUT) override {
-
-    if (iter == -1){
-      X = xt::zeros<double>({NOUT, N+1 ,N+1}) * nan("");
-      return 0;
-    }
-
-    std::function<double(int,int)> kernel = make_kernel(qSH.getLocation());
-    std::vector<BoutReal> q_arr = field_to_vector(qSH);
-    for (int j = mesh->ystart; j < mesh->yend+2; ++j) {
-      for (int k = mesh->ystart; k < mesh->yend+2; ++k) {
-          X(iter, j-mesh->ystart, k-mesh->ystart) = kernel(j, k);
-      }
-    }
-
-    if (iter % 1000 == 0){
-         xt::dump_npy("./kernel.npy", X);
-    }
-
-    return 0;
-  }
+  //int outputMonitor(BoutReal simtime, int iter, int NOUT) override {
+  //
+  //  if (iter == -1){
+  //    X = xt::zeros<double>({NOUT, N+1 ,N+1}) * nan("");
+  //    return 0;
+  //  }
+  //
+  //  std::function<double(int,int)> kernel = make_kernel(qSH.getLocation());
+  //  std::vector<BoutReal> q_arr = field_to_vector(qSH);
+  //  for (int j = mesh->ystart; j < mesh->yend+2; ++j) {
+  //    for (int k = mesh->ystart; k < mesh->yend+2; ++k) {
+  //        X(iter, j-mesh->ystart, k-mesh->ystart) = kernel(j, k);
+  //    }
+  //  }
+  //
+  //  if (iter % 1000 == 0){
+  //       xt::dump_npy("./kernel.npy", X);
+  //  }
+  //
+  //  return 0;
+  //}
 
   /* Weird stuff happens in the Field3D constructor
      that breaks the threaded integrals so just pull
@@ -215,12 +213,14 @@ protected:
     // Lots of closure magic to make this thread safe
     std::function<double(int,int)> kernel = make_kernel(qSH.getLocation());
     std::vector<BoutReal> q_arr = field_to_vector(qSH);
+	xt::xarray<double> X;
 
     auto parallel_core = [&](int j) {
       std::vector<BoutReal> F(N+1, 0);
       std::vector<BoutReal> G(N+1, 1);
       for (int k = mesh->ystart; k < mesh->yend+2; ++k) {
           F[k-mesh->ystart] = q_arr[k] * kernel(j, k);
+		  X(j-mesh->ystart, k-mesh->ystart) = kernel(j, k);
           if (knorm){G[k-mesh->ystart] = kernel(j, k);}
       }
       BoutReal ret = TrapeziumIntegrate(F, 0, N, length/N);
@@ -248,7 +248,7 @@ protected:
     //heat.applyBoundary("upper_target", "free_o3");
     //heat.applyBoundary("lower_target", "free_o3");
     //heat.mergeYupYdown();
-
+	xt::dump_npy("./kernel.npy", X);
     return interp_to(heat, loc);
   }
 
@@ -259,12 +259,15 @@ protected:
     Field3D T_stag = interp_to(T, CELL_YLOW);
     Field3D n_stag = interp_to(n, CELL_YLOW);
 
-    //n(0,0,0) = (3*n(0,1,0) - n(0,2,0))/2.;
-    //n(0,N+3,0) = (3*n(0,N+2,0) - n(0,N+1,0))/2.;
-    //n = floor(n, 1e-6);
+    n(0,0,0) = (3*n(0,1,0) - n(0,2,0))/2.;
+    n(0,N+3,0) = (3*n(0,N+2,0) - n(0,N+1,0))/2.;
+    //n = floor(n, 0.3);
 
-    //v(0,0,0) = (3*v(0,1,0) - v(0,2,0)) / 2.;
-    //v(0,N+3,0) = (3*v(0,N+2,0) - v(0,N+1,0)) / 2.;
+	for (int j = 0;j < N+4;j++){
+		if (n(0,j,0)>=2.0){n(0,j,0)=2.0;}}
+
+    v(0,0,0) = (3*v(0,1,0) - v(0,2,0)) / 2.;
+    v(0,N+3,0) = (3*v(0,N+2,0) - v(0,N+1,0)) / 2.;
 
 	v.applyBoundary("lower_target", "dirichlet(" + std::to_string(-sqrt(2*T_stag(0,2,0)*SI::qe/m_i)/c_st) + ")");
 	v.applyBoundary("upper_target", "dirichlet(" + std::to_string(sqrt(2*T_stag(0,N+2,0)*SI::qe/m_i)/c_st) + ")");
@@ -277,8 +280,8 @@ protected:
     // This cell doesn't get used, as we take only C2 derivatives
     // But the extrapolation can sometimes make it negative
     // which causes a problem with the T^2.5 term.
-    T(0,0,0) = T_t; T(0,N+3,0) = T_t;
-    T = floor(T, 1.0);
+    //T(0,0,0) = T_t; T(0,N+3,0) = T_t;
+    T = floor(T, 0.5*T_t);
 
     // Need to calculate the value of q one cell into the right boundary
     // because this cell is ON the boundary now as a result of being staggered
@@ -291,10 +294,15 @@ protected:
     // For tidiness, doesn't actually affect anything
     qSH(0,0,0) = 0; qSH(0,1,0) = 0;  qSH(0,N+3,0) = 0;
 
+
 	// Plasma parameter functions
 	logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
 	lambda_0 = (2.5e17/n_t) * T * T / (n * logLambda);
-	lambda = 32 * sqrt(2) * interp_to(lambda_0, CELL_YLOW);
+	//lambda_0 = 8.1e-6*pow(c_st*v,4)/(n*n_t*logLambda);
+	lambda = floor(lambda_0, 1.0); //limit to grid spacing
+
+	lambda = lambda_0*32*sqrt(2);
+	lambda = floor(lambda_0, 0.5); //limit to grid spacing
 
     // Free streaming heat flow
     qFS =  0.03 * interp_to(n, CELL_YLOW) * n_t * interp_to(T, CELL_YLOW) * SI::qe * sqrt(2*interp_to(T, CELL_YLOW)*SI::qe/m_e);
@@ -309,12 +317,7 @@ protected:
         break;
 
         case CONVOLUTION :
-			if (t<=2e3) {
-				q = qSH;
-			}
-			else {
-            	q = heat_convolution(qSH, CELL_YLOW);
-			}
+			q = heat_convolution(qSH, CELL_YLOW);
         break;
     }
 
