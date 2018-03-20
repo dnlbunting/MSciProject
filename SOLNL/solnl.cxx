@@ -130,15 +130,14 @@ protected:
   int outputMonitor(BoutReal simtime, int iter, int NOUT) {
 
     if (iter == -1){
-      X = xt::zeros<double>({NOUT, N+1 ,N+1}) * nan("");
-      return 0;
+      X = xt::zeros<double>({NOUT+1, N+1 ,N+1}) * nan("");
     }
 
     std::function<double(int,int)> kernel = make_kernel(qSH.getLocation());
     std::vector<BoutReal> q_arr = field_to_vector(qSH);
     for (int j = mesh->ystart; j < mesh->yend+2; ++j) {
       for (int k = mesh->ystart; k < mesh->yend+2; ++k) {
-          X(iter, j-mesh->ystart, k-mesh->ystart) = kernel(j, k);
+          X(iter+1, j-mesh->ystart, k-mesh->ystart) = kernel(j, k);
       }
     }
 
