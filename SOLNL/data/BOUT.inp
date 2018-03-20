@@ -34,7 +34,8 @@ symmetricGlobalY=true
 ixseps1 = -1
 ixseps2 = -1
 
-gamma = -H(0.5*mesh:length - mesh:ypos)*exp(-mesh:ypos/SHConduction:L_iz) + H(mesh:ypos - 0.5*mesh:length)*exp(-(mesh:length-mesh:ypos)/SHConduction:L_iz)
+# This small offset makes the gamma(L/2) = 0 and forces symmetry
+gamma = 0 -H(0.5*mesh:length - mesh:ypos-0.001)*exp(-mesh:ypos/SHConduction:L_iz) + H(mesh:ypos - 0.5*mesh:length)*exp(-(mesh:length-mesh:ypos)/SHConduction:L_iz)
 v_f = gamma/n:function
 n_f = 1 + sqrt(1 - (gamma)^2)
 

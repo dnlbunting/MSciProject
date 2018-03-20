@@ -298,8 +298,7 @@ protected:
 
     // Fluid equations
     ddt(n) =  c_st * (S_n - FDDY(v, n, CELL_CENTRE));
-    ddt(v) = (-DDY(p, CELL_YLOW))/(m_i*n*n_t*c_st) - c_st*(2 * VDDY(v, v, CELL_YLOW)  +  v*(VDDY(v, n, CELL_YLOW)/n));
-    n.applyTDerivBoundary();
+    ddt(v) = -DDY(p, CELL_YLOW)/(m_i*n_stag*n_t*c_st) - c_st*(2 * VDDY(v, v, CELL_YLOW)  +  v*(VDDY(v, n, CELL_YLOW)/n_stag));
     ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( S_u - DDY(q, CELL_CENTRE, DIFF_C2) + VDDY(v, p, CELL_CENTRE)) + (T/n) * ddt(n);
 
     v_centre=interp_to(v, CELL_CENTRE);
