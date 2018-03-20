@@ -54,9 +54,9 @@ mxstep = 5000
 
 [T]
 scale = 1.0
-function = 5
-bndry_ydown=free_o3 #dirichlet_o2(SHConduction:T_t)
-bndry_yup=free_o3 #dirichlet_o2(SHConduction:T_t)
+function = SHConduction:T_t
+bndry_ydown=free_o2 #dirichlet_o2(SHConduction:T_t)
+bndry_yup=free_o2 #dirichlet_o2(SHConduction:T_t)
 
 [n]
 scale = 1.0
@@ -69,7 +69,7 @@ S_n = (H(0.5*mesh:length - mesh:ypos)*exp(-(mesh:ypos)/SHConduction:L_iz)+ H(mes
 [v]
 scale = 1.0
 function = mesh:v_f
-bndry_ydown = dirichlet_o2(-1)
-bndry_yup =   dirichlet_o2(1)
+bndry_ydown = none #dirichlet_o2(-1)
+bndry_yup =   none #dirichlet_o2(1)
 
 ##################################################

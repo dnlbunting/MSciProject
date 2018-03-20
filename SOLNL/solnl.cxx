@@ -48,6 +48,8 @@ private:
   // Evolving variables
   Field3D T, n, v;
 
+  Field3D T_stag, n_stag;
+
   // Derived quantities
   Field3D p, q, p_dyn, qSH, qFS, v_centre;
 
@@ -162,9 +164,9 @@ protected:
      into a closure */
   std::function<double(int,int)>  make_kernel(CELL_LOC loc) const{
 
-    std::vector<BoutReal> n_arr = field_to_vector(interp_to(n, loc));
-    std::vector<BoutReal> T_arr = field_to_vector(interp_to(T, loc));
-    std::vector<BoutReal> lambda_arr = field_to_vector(interp_to(lambda, loc));
+    std::vector<BoutReal> n_arr = field_to_vector(n_stag);
+    std::vector<BoutReal> T_arr = field_to_vector(T_stag);
+    std::vector<BoutReal> lambda_arr = field_to_vector(lambda);
 
     if (knorm) {
         return [=](int i1, int i2){
@@ -227,18 +229,18 @@ protected:
   int rhs(BoutReal t) override {
     mesh->communicate(n,v,T);
 
-    n(0,0,0) = (3*n(0,1,0) - n(0,2,0))/2.;
-    n(0,N+3,0) = (3*n(0,N+2,0) - n(0,N+1,0))/2.;
     n = floor(n, 1e-6);
-
-    v(0,0,0) = (3*v(0,1,0) - v(0,2,0)) / 2.;
-    v(0,N+3,0) = (3*v(0,N+2,0) - v(0,N+1,0)) / 2.;
-
-    // This cell doesn't get used, as we take only C2 derivatives
-    // But the extrapolation can sometimes make it negative
-    // which causes a problem with the T^2.5 term.
-    T(0,0,0) = T_t; T(0,N+3,0) = T_t;
     T = floor(T, 1);
+
+    T_stag = floor(interp_to(T, CELL_YLOW), 1);
+    n_stag = floor(interp_to(n, CELL_YLOW), 1e-6);
+
+    // Apply sheath sound speed boundary
+    BoutReal c_su = sqrt(2*SI::qe*T_stag(0,2,0)/m_i);
+    BoutReal c_sl = -sqrt(2*SI::qe*T_stag(0,N+2,0)/m_i);
+
+    v.applyBoundary("lower_target", "dirichlet_o2(" + std::to_string(c_sl/c_st) + ")");
+    v.applyBoundary("upper_target", "dirichlet_o2(" + std::to_string(c_su/c_st) + ")");
 
     // Need to calculate the value of q one cell into the right boundary
     // because this cell is ON the boundary now as a result of being staggered
@@ -246,18 +248,20 @@ protected:
     // this is then used later to calculate (DDY(q))_{N-1}
     qSH = DDY(T, CELL_YLOW, DIFF_C2);
     qSH(0,N+2,0) = (T(0,N+2,0)-T(0,N+1,0))/mesh->coordinates()->dy(0,0,0);
-    qSH *= -kappa_0 * pow(interp_to(T, CELL_YLOW), 2.5);
+    qSH *= -kappa_0 * pow(T_stag, 2.5);
 
-    // For tidiness, doesn't actually affect anything
-    qSH(0,0,0) = 0; qSH(0,1,0) = 0;  qSH(0,N+3,0) = 0;
 
 	  // Plasma parameter functions
 	  logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
 	  lambda_0 = (2.5e17/n_t) * T * T / (n * logLambda);
-	  lambda = 32 * sqrt(2) * interp_to(lambda_0, CELL_YLOW);
+	  lambda = floor(32 * sqrt(2) * interp_to(lambda_0, CELL_YLOW), 0.5);
+
+    // For tidiness, doesn't actually affect anything
+    qSH(0,0,0) = nan(""); qSH(0,1,0) = nan("");  qSH(0,N+3,0) = nan("");
+    lambda(0,0,0) = nan(""); lambda(0,1,0) = nan("");  lambda(0,N+3,0) = nan("");
 
     // Free streaming heat flow
-    qFS =  0.03 * interp_to(n, CELL_YLOW) * n_t * interp_to(T, CELL_YLOW) * SI::qe * pow((2*interp_to(T, CELL_YLOW)*SI::qe/m_e),1.5);
+    qFS =  0.03 * n_stag * n_t * T_stag * SI::qe * pow((2*T_stag*SI::qe/m_e),1.5);
 
     switch(heat_type){
         case SPITZER_HARM :
@@ -274,14 +278,18 @@ protected:
     }
 
     //Convection term
-    Field3D q_conv = 2.5*SI::qe*n_t*c_st*v*interp_to(n*T, CELL_YLOW);
-    q = q + q_conv;
+    Field3D q_conv = 2.5*SI::qe*n_t*c_st*v*n_stag*T_stag;
+    //q = q + q_conv;
 
-    Field3D T_stag = interp_to(T, CELL_YLOW);
-    Field3D n_stag = interp_to(n, CELL_YLOW);
+    BoutReal qt_low = -5.5 * T_stag(0,2,0) * n_stag(0,2,0)*  n_t * sqrt(2*SI::qe*T_stag(0,2,0)/m_i) * SI::qe;
+    BoutReal qt_upr = 5.5 * T_stag(0,N+2,0) * n_stag(0,N+2,0) * n_t * sqrt(2*SI::qe*T_stag(0,N+2,0)/m_i) * SI::qe;
 
-    q(0,2,0) = -5.5 * T_stag(0,2,0) * n_stag(0,2,0)*  n_t * sqrt(2*SI::qe*T_stag(0,2,0)/m_i) * SI::qe; // - q_conv(0,2,0);
-    q(0,N+2,0) = 5.5 * T_stag(0,N+2,0) * n_stag(0,N+2,0) * n_t * sqrt(2*SI::qe*T_stag(0,N+2,0)/m_i) * SI::qe; // - q_conv(0,N+2,0);
+    q.applyBoundary("lower_target", "dirichlet_o2(" + std::to_string(qt_low) + ")");
+    q.applyBoundary("upper_target", "dirichlet_o2(" + std::to_string(qt_upr) + ")");
+
+    //output << "cs = " << c_sl/c_st << ", " << c_su/c_st << "\n";
+    //output << "Tt = " << T_stag(0,2,0) << ", " << T_stag(0,N+2,0) << "\n";
+    //output << "qt = " << q(0,2,0) << ", " << q(0,N+2,0) << "\n";
 
     // Fluid pressure
     p = 2*(n_t*n)*SI::qe*T;
