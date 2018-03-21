@@ -215,13 +215,6 @@ protected:
       heat(0,j,0) = futures[j-mesh->ystart].get();
     }
 
-    // These extrapolated boundaries are technically invalid,
-    // but necessary to use interp_to to shift ylow <-> ycenter
-    // maybe the sheath BC needs to be applied here????
-    //heat.applyBoundary("upper_target", "free_o3");
-    //heat.applyBoundary("lower_target", "free_o3");
-    //heat.mergeYupYdown();
-
     return interp_to(heat, loc);
   }
 
