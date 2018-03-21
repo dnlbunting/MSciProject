@@ -81,6 +81,7 @@ private:
   HEAT_TYPE heat_type;
   xt::xarray<double> X;
   bool knorm;
+  BoutReal a;
 
 protected:
   // This is called once at the start
@@ -94,6 +95,7 @@ protected:
     OPTION(options, n_t, 1.0);
     OPTION(options, heat_type, 0);
     OPTION(options, knorm, false);
+    OPTION(options, a, 1.0);
 
     c_st = sqrt(2*SI::qe*T_t/m_i);
 
@@ -246,7 +248,7 @@ protected:
 	  // Plasma parameter functions
 	  logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
 	  lambda_0 = (2.5e17/n_t) * T * T / (n * logLambda);
-	  lambda = floor(32 * sqrt(2) * interp_to(lambda_0, CELL_YLOW), 0.5);
+	  lambda = floor(a*interp_to(lambda_0, CELL_YLOW), 0.5);
 
     // For tidiness, doesn't actually affect anything
     qSH(0,0,0) = nan(""); qSH(0,1,0) = nan("");  qSH(0,N+3,0) = nan("");
