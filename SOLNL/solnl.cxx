@@ -104,7 +104,6 @@ protected:
 	  S_u = -2*q_in/length;
 
     FieldFactory f(mesh);
-    S_n = f.create3D("n:S_n");
 
     v.setLocation(CELL_YLOW); // Stagger
     qSH.setLocation(CELL_YLOW); // Stagger
@@ -269,6 +268,10 @@ protected:
             q = heat_convolution(qSH, CELL_YLOW);
         break;
     }
+
+    BoutReal Liz_l = 3e19/(n_stag(0,2,0)*n_t);
+    BoutReal Liz_u = 3e19/(n_stag(0,N+2,0)*n_t);;
+    S_n = exp(-ypos/Liz_l)/Liz_l + exp(-(length-ypos)/Liz_u)/Liz_u;
 
     //Convection term
     Field3D q_conv = 2.5*SI::qe*n_t*c_st*v*n_stag*T_stag;

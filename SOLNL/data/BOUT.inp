@@ -65,7 +65,6 @@ function = mesh:n_f
 bndry_ydown = dirichlet_o2(1)
 bndry_yup = dirichlet_o2(1)
 
-S_n = (H(0.5*mesh:length - mesh:ypos)*exp(-(mesh:ypos)/SHConduction:L_iz)+ H(mesh:ypos - 0.5*mesh:length)*exp(-(mesh:length-mesh:ypos)/SHConduction:L_iz))/SHConduction:L_iz
 
 [v]
 scale = 1.0
