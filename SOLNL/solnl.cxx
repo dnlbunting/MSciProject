@@ -51,7 +51,7 @@ private:
   Field3D T_stag, n_stag;
 
   // Derived quantities
-  Field3D p, q, p_dyn, qSH, qFS, v_centre;
+  Field3D p, q, p_dyn, qSH, qFS, v_centre, q_conv;
 
   Field3D A,B,C, gamma;
 
@@ -80,7 +80,7 @@ private:
 
   HEAT_TYPE heat_type;
   xt::xarray<double> X;
-  bool knorm;
+  bool knorm, convection;
   BoutReal a;
 
 protected:
@@ -95,6 +95,7 @@ protected:
     OPTION(options, n_t, 1.0);
     OPTION(options, heat_type, 0);
     OPTION(options, knorm, false);
+    OPTION(options, convection, false);
     OPTION(options, a, 1.0);
 
     c_st = sqrt(2*SI::qe*T_t/m_i);
@@ -118,7 +119,8 @@ protected:
 
     SOLVE_FOR3(T, n, v);
 
-    SAVE_REPEAT5(q, qSH, qFS, p, p_dyn);
+    SAVE_REPEAT4(q, qSH, qFS, q_conv);
+    SAVE_REPEAT2(p, p_dyn);
     SAVE_REPEAT3(ddt_n, ddt_T, ddt_v)
     SAVE_REPEAT(v_centre);
     SAVE_REPEAT2(lambda, logLambda);
@@ -276,8 +278,8 @@ protected:
     S_n = exp(-ypos/Liz_l)/Liz_l + exp(-(length-ypos)/Liz_u)/Liz_u;
 
     //Convection term
-    Field3D q_conv = 2.5*SI::qe*n_t*c_st*v*n_stag*T_stag;
-    //q = q + q_conv;
+    q_conv = 2.5*SI::qe*n_t*c_st*v*n_stag*T_stag;
+    if (convection){q += q_conv;}
 
     BoutReal qt_low = -5.5 * T_stag(0,2,0) * n_stag(0,2,0)*  n_t * sqrt(2*SI::qe*T_stag(0,2,0)/m_i) * SI::qe;
     BoutReal qt_upr = 5.5 * T_stag(0,N+2,0) * n_stag(0,N+2,0) * n_t * sqrt(2*SI::qe*T_stag(0,N+2,0)/m_i) * SI::qe;
