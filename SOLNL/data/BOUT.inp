@@ -61,9 +61,9 @@ bndry_yup=free_o2
 
 [n]
 scale = 1.0
-function = mesh:n_f
-bndry_ydown = dirichlet_o2(1)
-bndry_yup = dirichlet_o2(1)
+function = 1 # mesh:n_f
+bndry_ydown = free_o2 #dirichlet_o2(1)
+bndry_yup = free_o2 #dirichlet_o2(1)
 
 
 [v]
