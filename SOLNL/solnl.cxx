@@ -221,7 +221,6 @@ protected:
     return interp_to(heat, loc);
   }
 
-
   int rhs(BoutReal t) override {
     mesh->communicate(n,v,T);
 
@@ -245,7 +244,6 @@ protected:
     qSH = DDY(T, CELL_YLOW, DIFF_C2);
     qSH(0,N+2,0) = (T(0,N+2,0)-T(0,N+1,0))/mesh->coordinates()->dy(0,0,0);
     qSH *= -kappa_0 * pow(T_stag, 2.5);
-
 
 	  // Plasma parameter functions
 	  logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
@@ -286,10 +284,6 @@ protected:
 
     q.applyBoundary("lower_target", "dirichlet_o2(" + std::to_string(qt_low) + ")");
     q.applyBoundary("upper_target", "dirichlet_o2(" + std::to_string(qt_upr) + ")");
-
-    //output << "cs = " << c_sl/c_st << ", " << c_su/c_st << "\n";
-    //output << "Tt = " << T_stag(0,2,0) << ", " << T_stag(0,N+2,0) << "\n";
-    //output << "qt = " << q(0,2,0) << ", " << q(0,N+2,0) << "\n";
 
     // Fluid pressure
     p = 2*(n_t*n)*SI::qe*T;
