@@ -1,0 +1,77 @@
+nout = 10000   # Number of output timesteps
+timestep = 0.000001  # Time between outputs
+
+MXG = 0 # No X communications
+MYG = 2
+
+##################################################
+[SHConduction]
+
+kappa_0 = 2000
+T_t = 20
+n_t = 1e19
+L_iz = 5
+heat_type = 2 # 0=Spitzer-Harm, 1=limited, 2=convolution, 3=pulse
+knorm = false
+
+##################################################
+[mesh]  # Geometry of the mesh
+
+StaggerGrids = true
+
+
+nx = 1
+ny = 200
+nz = 1
+
+length = 100
+dy = length/ny
+ypos = y * length / (2*pi) # Y position [m]
+
+# Puts the boundaries half a step outside the last gridpoints
+symmetricGlobalY=true
+
+# These flags make the y-direction non-periodic
+ixseps1 = -1
+ixseps2 = -1
+
+gamma = -H(0.5*mesh:length - mesh:ypos)*exp(-mesh:ypos/SHConduction:L_iz) + H(mesh:ypos - 0.5*mesh:length)*exp(-(mesh:length-mesh:ypos)/SHConduction:L_iz)
+v_f = gamma/n:function
+n_f = 1 + sqrt(1 - (gamma)^2)
+
+[mesh:ddy]
+
+first = C2
+second = C2
+upwind = U4
+flux = SPLIT
+
+[solver]
+mxstep = 5000
+
+##################################################
+# Down is target
+# Up is upstream
+
+[T]
+scale = 1.0
+function = SHConduction:T_t
+bndry_ydown= free_o2#dirichlet_o2(SHConduction:T_t)
+bndry_yup= free_o2#dirichlet_o2(SHConduction:T_t)
+
+[n]
+scale = 1.0
+function = 1#mesh:n_f
+bndry_ydown =  free_o2#dirichlet_o2(0.96)
+bndry_yup =  free_o2#dirichlet_o2(0.96)
+
+Sn_bg = (H(0.5*mesh:length - mesh:ypos)*exp(-(mesh:ypos)/SHConduction:L_iz)+ H(mesh:ypos - 0.5*mesh:length)*exp(-(mesh:length-mesh:ypos)/SHConduction:L_iz))/SHConduction:L_iz
+Sn_pl = exp(-(0.5*mesh:length-mesh:ypos)^2/5)/sqrt(5*pi)
+
+[v]
+scale = 1.0
+function = -exp(-mesh:ypos/5) + exp(-(mesh:length-mesh:ypos)/5)
+bndry_ydown = none#dirichlet_o2(-1)
+bndry_yup =   none#dirichlet_o2(1)
+
+##################################################
