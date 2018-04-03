@@ -272,8 +272,12 @@ protected:
     }
 
     BoutReal Liz_l = 3e19/(n_stag(0,2,0)*n_t);
-    BoutReal Liz_u = 3e19/(n_stag(0,N+2,0)*n_t);;
-    S_n = exp(-ypos/Liz_l)/Liz_l + exp(-(length-ypos)/Liz_u)/Liz_u;
+    BoutReal Liz_u = 3e19/(n_stag(0,N+2,0)*n_t);
+    S_n=0;
+    for (int i = 0; i < mesh->LocalNy; ++i)
+    {
+      S_n(0,i,0) = 0 + (( i < 0.5*mesh->LocalNy) ? 1.0 : 0.0)*exp(-ypos(0,i,0)/Liz_l)/Liz_l + (( i > 0.5*mesh->LocalNy) ? 1.0 : 0.0)*exp(-(length-ypos(0,i,0))/Liz_u)/Liz_u;
+    }
 
     //Convection term
     q_conv = 2.5*SI::qe*n_t*c_st*v*n_stag*T_stag;
