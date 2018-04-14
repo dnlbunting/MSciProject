@@ -78,9 +78,10 @@ private:
   // Number of non boundary grid points
   int N = mesh->yend-mesh->ystart+1;
 
+  // Options
   HEAT_TYPE heat_type;
   xt::xarray<double> X;
-  bool knorm, convection;
+  bool knorm, convection, dynamic_Liz, dynamic_cst;
   BoutReal a;
 
 protected:
@@ -94,8 +95,10 @@ protected:
     OPTION(options, T_t, 1.0);
     OPTION(options, n_t, 1.0);
     OPTION(options, heat_type, 0);
-    OPTION(options, knorm, false);
+    OPTION(options, knorm, true);
     OPTION(options, convection, false);
+    OPTION(options, dynamic_Liz, false);
+    OPTION(options, dynamic_cst, false);
     OPTION(options, a, 1.0);
 
     c_st = sqrt(2*SI::qe*T_t/m_i);
@@ -134,7 +137,7 @@ protected:
 
   int outputMonitor(BoutReal simtime, int iter, int NOUT) {
 
-    if (iter == -1){
+    /*if (iter == -1){
       X = xt::zeros<double>({NOUT+1, N+1 ,N+1}) * nan("");
     }
 
@@ -148,7 +151,7 @@ protected:
 
     if (iter % 100 == 0){
          xt::dump_npy("./kernel.npy", X);
-    }
+    }*/
 
     return 0;
   }
@@ -223,17 +226,20 @@ protected:
 
   int rhs(BoutReal t) override {
     mesh->communicate(n,v,T);
-
     n = floor(n, 1e-6);
     T = floor(T, 1);
 
     T_stag = floor(interp_to(T, CELL_YLOW), 1);
     n_stag = floor(interp_to(n, CELL_YLOW), 1e-6);
 
-    // Apply sheath sound speed boundary
-    BoutReal c_su = sqrt(2*SI::qe*T_stag(0,2,0)/m_i);
-    BoutReal c_sl = -sqrt(2*SI::qe*T_stag(0,N+2,0)/m_i);
-
+    BoutReal c_su = c_st;
+    BoutReal c_sl = -c_st;
+    if (dynamic_cst){
+      // Apply sheath sound speed boundary
+      c_su = sqrt(2*SI::qe*T_stag(0,2,0)/m_i);
+      c_sl = -sqrt(2*SI::qe*T_stag(0,N+2,0)/m_i);
+    }
+    //output << c_sl/c_st << ", " << c_su/c_st << "\n";
     v.applyBoundary("lower_target", "dirichlet_o2(" + std::to_string(c_sl/c_st) + ")");
     v.applyBoundary("upper_target", "dirichlet_o2(" + std::to_string(c_su/c_st) + ")");
 
@@ -248,7 +254,7 @@ protected:
 	  // Plasma parameter functions
 	  logLambda = 15.2 - 0.5*log(n * (n_t/1e20)) + log(T/1000);
 	  lambda_0 = (2.5e17/n_t) * T * T / (n * logLambda);
-	  lambda = floor(a*interp_to(lambda_0, CELL_YLOW), 0.5);
+	  lambda = floor(sqrt(2)*a*interp_to(lambda_0, CELL_YLOW), mesh->coordinates()->dy(0,0,0));
 
     // For tidiness, doesn't actually affect anything
     qSH(0,0,0) = nan(""); qSH(0,1,0) = nan("");  qSH(0,N+3,0) = nan("");
@@ -271,11 +277,15 @@ protected:
         break;
     }
 
-    BoutReal Liz_l = 3e19/(n_stag(0,2,0)*n_t);
-    BoutReal Liz_u = 3e19/(n_stag(0,N+2,0)*n_t);
+    // Particle Source
+    BoutReal Liz_l = 3;
+    BoutReal Liz_u = 3;
     S_n=0;
-    for (int i = 0; i < mesh->LocalNy; ++i)
-    {
+    if (dynamic_Liz){
+      Liz_l = 3e19/(n_stag(0,2,0)*n_t);
+      Liz_u = 3e19/(n_stag(0,N+2,0)*n_t);
+    }
+    for (int i = 0; i < mesh->LocalNy; ++i){
       S_n(0,i,0) = 0 + (( i < 0.5*mesh->LocalNy) ? 1.0 : 0.0)*exp(-ypos(0,i,0)/Liz_l)/Liz_l + (( i > 0.5*mesh->LocalNy) ? 1.0 : 0.0)*exp(-(length-ypos(0,i,0))/Liz_u)/Liz_u;
     }
 
@@ -296,8 +306,10 @@ protected:
 
     // Fluid equations
     ddt(n) =  c_st * (S_n - FDDY(v, n, CELL_CENTRE));
-    ddt(v) = -DDY(p, CELL_YLOW)/(m_i*n_stag*n_t*c_st) - c_st*(2 * VDDY(v, v, CELL_YLOW)  +  v*(VDDY(v, n, CELL_YLOW)/n_stag));
-    ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( S_u - DDY(q, CELL_CENTRE, DIFF_C2) + VDDY(v, p, CELL_CENTRE)) + (T/n) * ddt(n);
+    ddt(v) = -DDY(p, CELL_YLOW)/(m_i*n_stag*n_t*c_st) - c_st* (VDDY(v, v, CELL_YLOW)  +  v*interp_to(S_n, CELL_YLOW)/n_stag);
+    ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( S_u - DDY(q, CELL_CENTRE, DIFF_C2) ) + (T/n) * ddt(n);
+
+    if (convection){ddt(T) += (c_st*VDDY(v, p, CELL_CENTRE) / (3 * n_t*n * SI::qe));}
 
     v_centre=interp_to(v, CELL_CENTRE);
 
