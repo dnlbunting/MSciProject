@@ -7,15 +7,15 @@ MYG = 2
 ##################################################
 [SHConduction]
 
-T_t = 100
+T_t = 20
 n_t = 1e19
 gam = 7.5
 beta = 1.0
 L_iz = 3
 L_sn = 25
-Sn0 = 0.5
-Su0 = 3.3e8
-heat_type = 2# 0=Spitzer-Harm, 1=limited, 2=convolution
+Sn0 = 0.7
+Su0 = 3.3e7
+heat_type = 0# 0=Spitzer-Harm, 1=limited, 2=convolution
 knorm = true
 save_kernel = false
 pulse = 0 # 0=none, 1=pulse, 2=ELM
@@ -23,6 +23,8 @@ convection = false
 alpha = 1
 delay = false
 cap = 1000
+dist_heat_src = true
+fix_qt = true
 
 ##################################################
 [mesh]  # Geometry of the mesh
@@ -57,7 +59,7 @@ upwind = U4
 flux = SPLIT
 
 [solver]
-mxstep = 5000
+mxstep = 50000
 
 ##################################################
 # Down is target
@@ -66,21 +68,21 @@ mxstep = 5000
 [T]
 scale = 1.0
 function = SHConduction:T_t
-bndry_ydown= free_o2#dirichlet_o2(SHConduction:T_t)#free_o2
-bndry_yup= free_o2#dirichlet_o2(SHConduction:T_t)#free_o2
+bndry_ydown= none#free_o2#dirichlet_o2(SHConduction:T_t)#free_o2
+bndry_yup= none#free_o2#dirichlet_o2(SHConduction:T_t)#free_o2
 
 [n]
 scale = 1.0
-function = 1.0#mesh:n_f
-bndry_ydown = free_o2#dirichlet_o2(0.96)#free_o2
-bndry_yup = free_o2#dirichlet_o2(0.96)#free_o2
+function = mesh:n_f
+bndry_ydown = none#free_o2#dirichlet_o2(0.96)#free_o2
+bndry_yup = none#free_o2#dirichlet_o2(0.96)#free_o2
 
 Sn_elm =  cos(pi*(mesh:ypos-mesh:length/2)/SHConduction:L_sn) * H(mesh:ypos-(mesh:length-SHConduction:L_sn)/2) * H(-mesh:ypos+(mesh:length+SHConduction:L_sn)/2)/SHConduction:L_iz
 Sn_pl = exp(-(0.5*mesh:length-mesh:ypos)^2/5)/sqrt(5*pi)
 
 [v]
 scale = 1.0
-function = 0#-exp(-mesh:ypos/5) + exp(-(mesh:length-mesh:ypos)/5)
+function = -exp(-mesh:ypos/5) + exp(-(mesh:length-mesh:ypos)/5)
 bndry_ydown = none#dirichlet_o2(-1)
 bndry_yup =   none#dirichlet_o2(1)
 

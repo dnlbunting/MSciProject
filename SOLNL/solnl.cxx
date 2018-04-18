@@ -1,4 +1,3 @@
-
 /*
  * 1D Braginksii model for plasma density, energy and momentum with
  * convolution conductivity using trapezium rule integration
@@ -55,13 +54,11 @@ private:
 
   // Derived quantities
   Field3D p, q, p_dyn, qSH, qFS, v_centre, v_th;//, kappa_0;
-  BoutReal qt_upr, qt_low;
-  Field3D col, qL, qR;
 
   Field3D A,B,C, gamma;
 
   // Source terms
-  Field3D ypos, Sn_bg, Sn_pl, Sn_elm, S_n, S_u, Su;
+  Field3D ypos, Sn_hr, Sn_pl, Sn_elm, S_n, S_u, Su;
   BoutReal Liz_l, Liz_u, L_iz, L_sn;
 
   // Constants
@@ -70,6 +67,7 @@ private:
   BoutReal m_e = SI::Me;
   BoutReal Su0, Sn0, gam;
   BoutReal alpha, beta;
+
 
   // Plasma parameters
   Field3D logLambda, lambda_0, lambda;
@@ -91,6 +89,8 @@ private:
   bool convection;
   bool save_kernel;
   bool delay;
+  bool dist_heat_src;
+  bool fix_qt;
 
 protected:
   // This is called once at the start
@@ -106,6 +106,7 @@ protected:
 	OPTION(options, gam, 1.0);
 	OPTION(options, beta, 1.0);
     OPTION(options, heat_type, 0);
+	OPTION(options, dist_heat_src, true);
 	OPTION(options, pulse, 0);
     OPTION(options, knorm, false);
 	OPTION(options, convection, false);
@@ -115,14 +116,23 @@ protected:
 	OPTION(options, L_sn, 1.0);
 	OPTION(options, alpha, 1.0);
 	OPTION(options, cap, 1.0);
+	OPTION(options, fix_qt, true);
 
     c_st = sqrt(5*SI::qe*T_t/(3*m_i));
 
     OPTION(Options::getRoot()->getSection("mesh"), length, 1.0);
 
-	  // Target heat condition
-	  q_in = -gam * T_t * n_t * c_st * SI::qe;
-	  Su = -2*q_in/length;
+	// Target heat condition
+	q_in = -gam * T_t * n_t * c_st * SI::qe;
+	if (dist_heat_src) {
+		Su = -2*q_in/length;
+	}
+	else {
+		Su.setLocation(CELL_YLOW);
+		S_u.setLocation(CELL_YLOW);
+		Su=0;
+		Su(0,122,0)=-2*q_in;
+	}
 
     FieldFactory f(mesh);
     Sn_elm = f.create3D("n:Sn_elm");
@@ -138,10 +148,6 @@ protected:
 	logLambda.setLocation(CELL_YLOW); // Stagger
 	lambda_0.setLocation(CELL_YLOW); // Stagger
 
-	col.setLocation(CELL_YLOW);
-	qL.setLocation(CELL_YLOW);
-	qR.setLocation(CELL_YLOW);
-
     ypos = f.create3D("mesh:ypos");
     ypos.applyBoundary("lower_target", "free_o3");
     ypos.applyBoundary("upper_target", "free_o3");
@@ -151,11 +157,12 @@ protected:
 
     SAVE_REPEAT5(q, qSH, qFS, p, p_dyn);
     SAVE_REPEAT3(ddt_n, ddt_T, ddt_v);
-    SAVE_REPEAT3(v_centre, v_th, Sn_bg);
+    SAVE_REPEAT3(v_centre, v_th, Sn_hr);
     SAVE_REPEAT3(lambda,lambda_0, logLambda);
-	SAVE_REPEAT3(col, qL, qR);
+	SAVE_REPEAT2(S_n, S_u);
+
     SAVE_ONCE4(kappa_0, q_in, T_t, length);
-    SAVE_ONCE4(S_n, n_t, c_st, S_u);
+    SAVE_ONCE2(n_t, c_st);
     SAVE_ONCE2(ypos, heat_type);
 	SAVE_ONCE3(alpha, beta, gam);
 
@@ -279,6 +286,14 @@ protected:
   int rhs(BoutReal t) override {
     mesh->communicate(n,v,T);
 
+	if (!fix_qt){
+		T.applyBoundary("lower_target", "dirichlet_o2(" + std::to_string(T_t) + ")");
+		T.applyBoundary("upper_target", "dirichlet_o2(" + std::to_string(T_t) + ")");
+
+		n.applyBoundary("lower_target", "dirichlet_o2(" + std::to_string(1.0) + ")");
+		n.applyBoundary("upper_target", "dirichlet_o2(" + std::to_string(1.0) + ")");
+	}
+
     n = floor(n, 0);
     T = floor(T, 1);
 
@@ -298,8 +313,7 @@ protected:
 	Liz_l = 3e19/(n_stag(0,2,0)*n_t);
 	Liz_u = 3e19/(n_stag(0,N+2,0)*n_t);
 
-	Sn_bg = exp(-ypos/Liz_l)/Liz_l + exp(-(length-ypos)/Liz_u)/Liz_u;
-	//Sn_bg = exp(-ypos/L_iz)/L_iz + exp(-(length-ypos)/L_iz)/L_iz;
+	Sn_hr = exp(-ypos/Liz_l)/Liz_l + exp(-(length-ypos)/Liz_u)/Liz_u + 0.5/length;
 
 	// Plasma parameter functions
 	logLambda = 15.2 - 0.5*log(n_stag * (n_t/1e20)) + log(T_stag/1000);
@@ -314,27 +328,27 @@ protected:
 
 	switch(pulse){
 			case NONE :
-				S_n = Sn_bg;
+				S_n = Sn_hr;
 				S_u = Su;
 			break;
 
 			case STEP :
 				if (t >= 1.0e-3 && t<= 1.0e-3 + 1.0e-6) {
-					S_n = Sn_bg + 10*Sn_pl; // particle pulse for 1 microsec
+					S_n = Sn_hr +  + 10*Sn_pl; // particle pulse for 1 microsec
 				}
 				else {
-					S_n = Sn_bg;
+					S_n = Sn_hr;
 				}
 				S_u = Su;
 			break;
 
 			case ELM :
-				if (t >= 1.0e-2 && t <= 1.0e-2 + 2e-4) {
-					S_n = (Sn0*Sn_elm)+Sn_bg;
+				if (t >= 7.0e-3 && t <= 7.0e-3 + 2e-4) {
+					S_n = (Sn0*Sn_elm)+Sn_hr;
 					S_u = Su0*Sn_elm+Su;
 				}
 				else {
-					S_n = Sn_bg;
+					S_n = Sn_hr;
 					S_u = Su;
 				}
 			break;
@@ -351,15 +365,12 @@ protected:
     qSH *= -kappa_0 * pow(T_stag, 2.5);
 
     // For tidiness, doesn't actually affect anything
-    //qSH(0,0,0) = nan(""); qSH(0,1,0) = nan("");  qSH(0,N+3,0) = nan("");
-    //lambda(0,0,0) = nan(""); lambda(0,1,0) = nan("");  lambda(0,N+3,0) = nan("");
+    qSH(0,0,0) = nan(""); qSH(0,1,0) = nan("");  qSH(0,N+3,0) = nan("");
+    lambda(0,0,0) = nan(""); lambda(0,1,0) = nan("");  lambda(0,N+3,0) = nan("");
 
     // Free streaming heat flow
     qFS =  beta * n_stag * n_t * T_stag * SI::qe * v_th;
-	//qFS(0,0,0) = nan(""); qFS(0,1,0) = nan("");  qFS(0,N+3,0) = nan("");
-
-	qt_low = -gam * T_stag(0,2,0) * n_stag(0,2,0)*  n_t * sqrt(2*SI::qe*T_stag(0,2,0)/m_i) * SI::qe;
-    qt_upr = gam * T_stag(0,N+2,0) * n_stag(0,N+2,0) * n_t * sqrt(2*SI::qe*T_stag(0,N+2,0)/m_i) * SI::qe;
+	qFS(0,0,0) = nan(""); qFS(0,1,0) = nan("");  qFS(0,N+3,0) = nan("");
 
 	switch(heat_type){
         case SPITZER_HARM :
@@ -381,48 +392,29 @@ protected:
     	q += q_conv;
 	}
 
-	if (heat_type != SPITZER_HARM) {
+	if (fix_qt) {
+		T.applyBoundary("lower_target", "free_o2");
+		T.applyBoundary("upper_target", "free_o2");
 
-		col = length/lambda_0;
-		qL = (qt_low - q(0,2,0) - exp(-col)   * (qt_upr-q(0,N+2,0)) ) / (1-exp(-2*col));
-		qR = (qt_upr - q(0,N+2,0) - exp(-col) * (qt_low-q(0,2,0))   ) / (1-exp(-2*col));
+		n.applyBoundary("lower_target", "free_o2");
+		n.applyBoundary("upper_target", "free_o2");
 
-		// -0.25 offset to staggered grid
-		q = q + qL * exp(-(ypos-0.25)/lambda_0) + qR * exp((ypos-0.25-length)/lambda_0);
+		BoutReal qt_low = -gam * T_stag(0,2,0) * n_stag(0,2,0)*  n_t * sqrt(2*SI::qe*T_stag(0,2,0)/m_i) * SI::qe;
+    	BoutReal qt_upr = gam * T_stag(0,N+2,0) * n_stag(0,N+2,0) * n_t * sqrt(2*SI::qe*T_stag(0,N+2,0)/m_i) * SI::qe;
+
+		q.applyBoundary("lower_target", "dirichlet_o2(" + std::to_string(qt_low) + ")");
+		q.applyBoundary("upper_target", "dirichlet_o2(" + std::to_string(qt_upr) + ")");
 	}
-
-	q.applyBoundary("lower_target", "dirichlet_o2(" + std::to_string(qt_low) + ")");
-	q.applyBoundary("upper_target", "dirichlet_o2(" + std::to_string(qt_upr) + ")");
-
-	//if (delay) {
-	//	if (t<=4e-3){
-    //		q.applyBoundary("lower_target", "dirichlet_o2(" + std::to_string(qt_low) + ")");
-    //		q.applyBoundary("upper_target", "dirichlet_o2(" + std::to_string(qt_upr) + ")");
-	//	}
-	//	else {
-	//		q.applyBoundary("lower_target", "free_o2");
-	//		q.applyBoundary("upper_target", "free_o2");
-	//	}
-	//}
-	//else {
-	//	q.applyBoundary("lower_target", "dirichlet_o2(" + std::to_string(qt_low) + ")");
-	//	q.applyBoundary("upper_target", "dirichlet_o2(" + std::to_string(qt_upr) + ")");
-	//}
 
     // Fluid pressure
     p = 2*(n_t*n)*SI::qe*T;
     p.mergeYupYdown();
     p_dyn = m_i * (n_t*n) * (c_st*v) * (c_st*v);
 
-	//T(0,1,0) = (3*T(0,2,0)-T(0,3,0))/2;
-	//T(0,0,0) = (3*T(0,1,0)-T(0,2,0))/2;
-	//T(0,N+2,0) = (3*T(0,N+1,0)-T(0,N,0))/2;
-	//T(0,N+3,0) = (3*T(0,N+2,0)-T(0,N+1,0))/2;
-
     // Fluid equations
     ddt(n) = c_st * (S_n - FDDY(v, n, CELL_CENTRE));
     ddt(v) = -DDY(p, CELL_YLOW)/(m_i*n_stag*n_t*c_st) - c_st*(2 * VDDY(v, v, CELL_YLOW)  +  v*(VDDY(v, n, CELL_YLOW)/n_stag));
-    ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( S_u - DDY(q, CELL_CENTRE, DIFF_C2) + VDDY(v, p, CELL_CENTRE)) + (T/n) * ddt(n);
+    ddt(T) = (1 / (3 * n_t*n * SI::qe)) * ( interp_to(S_u, CELL_CENTRE) - DDY(q, CELL_CENTRE, DIFF_C2) + c_st * VDDY(v, p, CELL_CENTRE)) + (T/n) * ddt(n);
 
     ddt_T = ddt(T);
     ddt_n = ddt(n);
